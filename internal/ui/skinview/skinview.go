@@ -45,13 +45,13 @@ func New(s *skin.Skin) *View {
 	for name := range skin.Definitions() {
 		def, _ := skin.Definition(name)
 		sheet, ok := v.sheets[def.Sheet]
-		if !ok {
-			v.missing[name] = true
+		if !ok || !def.Src.In(sheet.Bounds()) {
+			v.markMissing(name)
 			continue
 		}
 		sub, ok := sheet.SubImage(def.Src).(*ebiten.Image)
 		if !ok {
-			v.missing[name] = true
+			v.markMissing(name)
 			continue
 		}
 		v.sprites[name] = sub
@@ -69,6 +69,13 @@ func (v *View) Sprite(name string) *ebiten.Image {
 		return img
 	}
 
+	return v.markMissing(name)
+}
+
+func (v *View) markMissing(name string) *ebiten.Image {
+	if img, ok := v.placeholders[name]; ok {
+		return img
+	}
 	width, height := placeholderSize(name)
 	img := ebiten.NewImage(width, height)
 	img.Fill(color.RGBA{R: 0xff, G: 0x00, B: 0xff, A: 0xff})

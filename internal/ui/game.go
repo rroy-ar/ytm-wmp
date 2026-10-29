@@ -175,7 +175,7 @@ func (g *Game) start() {
 	g.started = true
 	g.paused = false
 	g.errText = ""
-	slog.Debug("playback started", "target", g.target)
+	slog.Debug("playback started")
 
 	g.wg.Add(1)
 	go func() {

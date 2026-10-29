@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"golang.org/x/image/bmp"
+
 	"ytm-wmp/internal/skin"
 )
 
@@ -69,5 +71,43 @@ func TestViewUsesSizedPlaceholderForMissingSprite(t *testing.T) {
 	}
 	if !view.Missing("UNKNOWN") {
 		t.Fatal("unknown sprite should be marked missing")
+	}
+}
+
+func TestViewTreatsTruncatedSheetAsMissing(t *testing.T) {
+	dir := t.TempDir()
+	mainData, err := os.ReadFile(filepath.Join("..", "..", "..", "assets", "dev-skin", "main.bmp"))
+	if err != nil {
+		t.Fatalf("read main.bmp: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "MAIN.BMP"), mainData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A cbuttons sheet that exists but is far too small for its sprites.
+	tiny := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	f, err := os.Create(filepath.Join(dir, "CBUTTONS.BMP"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bmp.Encode(f, tiny); err != nil {
+		f.Close()
+		t.Fatalf("write tiny cbuttons: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := skin.Open(dir)
+	if err != nil {
+		t.Fatalf("Open = %v", err)
+	}
+	view := New(s)
+
+	if !view.Missing(skin.PlayButton) {
+		t.Fatal("truncated cbuttons sheet should mark the play button missing")
+	}
+	def, _ := skin.Definition(skin.PlayButton)
+	if got, want := view.Sprite(skin.PlayButton).Bounds().Size(), def.Src.Size(); got != want {
+		t.Fatalf("placeholder size = %v, want %v", got, want)
 	}
 }

@@ -60,6 +60,16 @@ func TestTopmostWidgetWins(t *testing.T) {
 	}
 }
 
+func TestPressStartedOutsideDoesNotClick(t *testing.T) {
+	var p Pointer
+
+	p.Update(100, 100, true, testWidgets) // first observation: button already down
+	p.Update(5, 5, true, testWidgets)     // dragged into a widget
+	if got := p.Update(5, 5, false, testWidgets); got != "" {
+		t.Fatalf("release clicked %q, want nothing after a press started outside", got)
+	}
+}
+
 func TestHotTracksPointerAndClearsOutside(t *testing.T) {
 	var p Pointer
 

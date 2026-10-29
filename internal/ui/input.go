@@ -18,30 +18,29 @@ type Widget struct {
 // moving back inside before release still completes it. That feels like a
 // button and avoids accidentally triggering on a drag.
 type Pointer struct {
-	x, y       int
-	hot        string
-	active     string
-	pressed    bool
-	wasPressed bool
+	x, y    int
+	hot     string
+	active  string
+	pressed bool
 }
 
 // Update advances the pointer state and returns a widget ID when a complete
 // press/release pair landed on the same widget.
 func (p *Pointer) Update(x, y int, pressed bool, widgets []Widget) (clicked string) {
+	wasPressed := p.pressed
 	p.x, p.y = x, y
 	p.hot = topmostAt(x, y, widgets)
 
-	if pressed && !p.wasPressed {
+	if pressed && !wasPressed {
 		p.active = p.hot
 	}
-	if !pressed && p.wasPressed {
+	if !pressed && wasPressed {
 		if p.active != "" && p.hot == p.active {
 			clicked = p.active
 		}
 		p.active = ""
 	}
 	p.pressed = pressed
-	p.wasPressed = pressed
 	return clicked
 }
 

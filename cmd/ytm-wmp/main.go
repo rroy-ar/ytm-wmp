@@ -70,6 +70,9 @@ func run() error {
 		return err
 	}
 	slog.Info("skin loaded", "path", skinPath, "sheets", s.SheetNames())
+	if warnings := s.Warnings(); len(warnings) > 0 {
+		slog.Warn("skin loaded with warnings", "warnings", warnings)
+	}
 
 	resolver := ytdlp.New(ytdlp.WithBinary(ytdlpTool.Path))
 	sink := audio.NewEbitenSink()

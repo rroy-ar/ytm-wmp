@@ -3,10 +3,15 @@ package ui
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/hajimehoshi/ebiten/v2"
+
+	"ytm-wmp/internal/skin"
 )
 
 func TestPlayStartsThenPauseAndResume(t *testing.T) {
@@ -111,6 +116,56 @@ func TestCloseCancelsPlaybackAndClosesSink(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("playback context was not canceled")
 	}
+}
+
+func TestFirstUpdateInitializesAudioAndSkinView(t *testing.T) {
+	s, err := skin.Open(filepath.Join("..", "..", "assets", "dev-skin"))
+	if err != nil {
+		t.Fatalf("Open(dev skin) = %v", err)
+	}
+	control := &fakeControl{}
+	g := NewGame(context.Background(), "track", s, newFakeRunner(), control)
+	defer g.Close()
+
+	if err := g.Update(); err != nil {
+		t.Fatalf("Update = %v", err)
+	}
+	if control.initCount() != 1 {
+		t.Fatalf("audio Init calls = %d, want 1", control.initCount())
+	}
+	if g.view == nil {
+		t.Fatal("skin view was not created on the first Update")
+	}
+
+	// A second tick must not create another audio context or view.
+	if err := g.Update(); err != nil {
+		t.Fatalf("second Update = %v", err)
+	}
+	if control.initCount() != 1 {
+		t.Fatalf("audio Init calls after two ticks = %d, want 1", control.initCount())
+	}
+}
+
+func TestDrawRendersSkinAndDebugOverlay(t *testing.T) {
+	s, err := skin.Open(filepath.Join("..", "..", "assets", "dev-skin"))
+	if err != nil {
+		t.Fatalf("Open(dev skin) = %v", err)
+	}
+	g := NewGame(context.Background(), "track", s, newFakeRunner(), &fakeControl{})
+	defer g.Close()
+	if err := g.Update(); err != nil {
+		t.Fatalf("Update = %v", err)
+	}
+
+	screen := ebiten.NewImage(WindowWidth, WindowHeight)
+	g.Draw(screen)
+
+	// Pixel readback panics until the game loop has started, so this is a
+	// panic/smoke test rather than a golden-image test. The live smoke run and
+	// the screenshot review cover visual output.
+	g.toggleDebug()
+	g.Draw(screen)
+
 }
 
 func TestToggleDebug(t *testing.T) {
@@ -219,6 +274,12 @@ func (c *fakeControl) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closes++
+}
+
+func (c *fakeControl) initCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inits
 }
 
 func (c *fakeControl) pauseCount() int {

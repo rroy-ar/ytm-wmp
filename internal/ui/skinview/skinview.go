@@ -73,6 +73,7 @@ func (v *View) Sprite(name string) *ebiten.Image {
 	img := ebiten.NewImage(width, height)
 	img.Fill(color.RGBA{R: 0xff, G: 0x00, B: 0xff, A: 0xff})
 	v.placeholders[name] = img
+	v.missing[name] = true
 	return img
 }
 

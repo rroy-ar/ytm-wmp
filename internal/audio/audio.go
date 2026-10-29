@@ -13,12 +13,13 @@ import (
 	"time"
 )
 
-// Output format produced by ffmpeg. Phase 0 keeps the PoC's s16le pipe; Phase
-// 1 switches this to f32le, which Ebitengine's audio context consumes directly.
+// Output format produced by ffmpeg. Ebitengine's NewPlayerF32 consumes raw
+// stereo float32 little-endian PCM directly, so no decoder sits between the
+// pipe and the audio device.
 const (
 	SampleRate     = 48000
 	Channels       = 2
-	BytesPerSample = 2
+	BytesPerSample = 4
 	FrameSize      = Channels * BytesPerSample
 )
 

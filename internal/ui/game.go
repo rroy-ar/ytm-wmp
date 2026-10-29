@@ -175,11 +175,13 @@ func (g *Game) start() {
 	g.started = true
 	g.paused = false
 	g.errText = ""
+	slog.Debug("playback started", "target", g.target)
 
 	g.wg.Add(1)
 	go func() {
 		defer g.wg.Done()
 		err := g.runner.Play(g.ctx, g.target)
+		slog.Debug("playback finished", "err", err)
 		if errors.Is(err, context.Canceled) {
 			return
 		}
@@ -195,6 +197,7 @@ func (g *Game) drainEvents() {
 	for {
 		select {
 		case result := <-g.events:
+			slog.Debug("playback result drained", "err", result.err)
 			g.started = false
 			g.paused = false
 			if result.err != nil {
@@ -267,11 +270,6 @@ func (g *Game) drawDebug(screen *ebiten.Image) {
 	cyan := color.RGBA{R: 0x00, G: 0xff, B: 0xff, A: 0xff}
 	magenta := color.RGBA{R: 0xff, G: 0x00, B: 0xff, A: 0xff}
 
-	var report strings.Builder
-	fmt.Fprintf(&report, "FPS %.1f TPS %.1f\n", ebiten.ActualFPS(), ebiten.ActualTPS())
-	fmt.Fprintf(&report, "state playing=%v paused=%v hot=%q active=%q\n", g.started, g.paused, g.pointer.Hot(), g.pointer.Active())
-	fmt.Fprintf(&report, "cursor=%v\n", g.pointer.Position())
-
 	for _, p := range mainPlacements {
 		name := g.spriteName(p.Sprite)
 		def, ok := skin.Definition(name)
@@ -280,17 +278,32 @@ func (g *Game) drawDebug(screen *ebiten.Image) {
 		}
 		width, height := def.Src.Dx(), def.Src.Dy()
 		vector.StrokeRect(screen, float32(p.At.X)+0.5, float32(p.At.Y)+0.5, float32(width), float32(height), 1, cyan, false)
-		fmt.Fprintf(&report, "%s src=%v dst=%v\n", name, def.Src, p.At)
 	}
 	for _, widget := range mainWidgets {
 		b := widget.Bounds
 		vector.StrokeRect(screen, float32(b.Min.X)+0.5, float32(b.Min.Y)+0.5, float32(b.Dx()), float32(b.Dy()), 1, magenta, false)
-		fmt.Fprintf(&report, "hit %s %v\n", widget.ID, b)
 	}
 
-	// A dark panel keeps the text readable over bright skins.
-	vector.DrawFilledRect(screen, 3, 15, 269, 70, color.RGBA{A: 0xd0}, false)
-	ebitenutil.DebugPrintAt(screen, report.String(), 5, 15)
+	// Keep the report to six short lines: the built-in debug font does not
+	// wrap, and the window is only 275 logical pixels wide.
+	var report strings.Builder
+	fmt.Fprintf(&report, "FPS %.0f TPS %.0f play=%v pause=%v\n", ebiten.ActualFPS(), ebiten.ActualTPS(), g.started, g.paused)
+	fmt.Fprintf(&report, "hot=%q active=%q cursor=%v\n", g.pointer.Hot(), g.pointer.Active(), g.pointer.Position())
+	for _, widget := range mainWidgets {
+		fmt.Fprintf(&report, "hit %s %v\n", widget.ID, widget.Bounds)
+	}
+	fmt.Fprintf(&report, "bg %v title %v\n", mainPlacements[0].At, mainPlacements[1].At)
+	fmt.Fprintf(&report, "play %v pause %v\n", mainPlacements[2].At, mainPlacements[3].At)
+
+	lines := wrapText(report.String(), 43)
+	if len(lines) > 6 {
+		lines = lines[:6]
+	}
+	height := float32(10 + len(lines)*14)
+	vector.DrawFilledRect(screen, 3, 3, 269, height, color.RGBA{A: 0xe0}, false)
+	for i, line := range lines {
+		ebitenutil.DebugPrintAt(screen, line, 5, 5+i*14)
+	}
 }
 
 func wrapText(text string, limit int) []string {

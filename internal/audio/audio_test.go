@@ -14,7 +14,7 @@ func TestFFmpegArgs(t *testing.T) {
 		args := ffmpegArgs("https://example.com/audio?a=1&b=2", 0)
 
 		assertContainsPair(t, args, "-i", "https://example.com/audio?a=1&b=2")
-		assertContainsPair(t, args, "-f", "s16le")
+		assertContainsPair(t, args, "-f", "f32le")
 		assertContainsPair(t, args, "-ac", "2")
 		assertContainsPair(t, args, "-ar", "48000")
 		assertNoValue(t, args, "-ss")
@@ -45,6 +45,21 @@ func TestFFmpegArgs(t *testing.T) {
 		args := ffmpegArgs("https://example.com/audio", -time.Second)
 		assertNoValue(t, args, "-ss")
 	})
+}
+
+func TestPCMFormatMatchesNewPlayerF32(t *testing.T) {
+	if SampleRate != 48000 {
+		t.Fatalf("SampleRate = %d, want 48000", SampleRate)
+	}
+	if Channels != 2 {
+		t.Fatalf("Channels = %d, want stereo", Channels)
+	}
+	if BytesPerSample != 4 {
+		t.Fatalf("BytesPerSample = %d, want 4 for float32", BytesPerSample)
+	}
+	if FrameSize != Channels*BytesPerSample {
+		t.Fatalf("FrameSize = %d, want %d", FrameSize, Channels*BytesPerSample)
+	}
 }
 
 func TestRingBufferKeepsTail(t *testing.T) {

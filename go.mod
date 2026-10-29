@@ -3,7 +3,6 @@ module ytm-wmp
 go 1.27.3
 
 require (
-	github.com/gopxl/beep v1.4.1
 	github.com/hajimehoshi/ebiten/v2 v2.10.5
 	golang.org/x/image v0.47.0
 )
@@ -14,7 +13,6 @@ require (
 	github.com/ebitengine/oto/v3 v3.5.0 // indirect
 	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/jfreymuth/pulse v0.1.3 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )

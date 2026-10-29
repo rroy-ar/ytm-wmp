@@ -98,7 +98,7 @@ func ffmpegArgs(streamURL string, offset time.Duration) []string {
 	return append(args,
 		"-i", streamURL,
 		"-vn",
-		"-f", "s16le",
+		"-f", "f32le",
 		"-ac", strconv.Itoa(Channels),
 		"-ar", strconv.Itoa(SampleRate),
 		"-",

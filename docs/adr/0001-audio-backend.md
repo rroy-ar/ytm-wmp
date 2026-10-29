@@ -1,13 +1,13 @@
 # ADR 0001: Use Ebitengine's audio context with an f32le ffmpeg pipe
 
 - Status: Accepted
-- Date: 2026-10-25
+- Date: 2026-10-25 (updated after the Phase 1 spike)
 - Deciders: project owner
 - Related: plan decision D1, Phase 1
 
 ## Context
 
-The Phase 0 proof of concept uses `beep` + `oto` for audio. The UI will use
+The Phase 0 proof of concept uses `beep` + `oto` for audio. The UI uses
 Ebitengine, which creates its own process-wide audio context. Running both
 stacks means two audio devices and two event loops fighting over `oto`.
 
@@ -19,26 +19,33 @@ can hold a lock that shutdown waits on.
 
 Phase 1 switches playback to `ebiten/v2/audio`:
 
-- create exactly one audio context in `main` with `audio.NewContext(48000)`
-  before `RunGame`;
+- create exactly one 48 kHz context on the first `Update` tick, after
+  Ebitengine has started; `main` only constructs the sink;
 - have ffmpeg emit `f32le`, stereo, 48 kHz PCM;
 - create players with `ctx.NewPlayerF32(source)`;
-- pause with `PauseAndStopReading()` (never `Close()`, deprecated in v2.10);
+- pause with `Player.Pause()`, which keeps ffmpeg and the buffered pipe alive
+  for an instant resume;
+- stop and shut down with `PauseAndStopReading()` (never the deprecated
+  `Close()`), after closing the ffmpeg pipe;
 - never seek the player: recreate ffmpeg and the player at the target offset;
-- tear down in this order: cancel/kill ffmpeg, `PauseAndStopReading`, close the
-  pipe, wait for the read loop and process, then discard the player.
+- tear down in this order: close/cancel the source, then
+  `PauseAndStopReading`, then wait for the read loop and process to finish.
 
-Phase 0 keeps the `beep` sink behind `internal/audio.Source` so this switch does
-not change the resolver, playback orchestration, or CLI.
+The spike confirmed that creating the context on the first tick works and keeps
+device initialization off the startup path. `AudioControl` and `pcmPlayer`
+interfaces keep the lifecycle testable without opening a real device.
 
 ## Consequences
 
 - One audio device and one event loop, which is the only sane fit for a game
   loop that also renders the UI.
-- The PCM format changes from `s16le` to `f32le`; `internal/audio` constants and
+- The PCM format is float32 little-endian; `internal/audio` constants and
   `ffmpegArgs` are the only places that need to know.
-- `PauseAndStopReading` can block on a stalled read. Killing ffmpeg and closing
-  the pipe first is mandatory, not optional.
+- `PauseAndStopReading` can block on a stalled read. Closing/killing ffmpeg
+  first is mandatory, not optional; the sink enforces that order.
+- Pausing does not stop ffmpeg, so a paused session still holds a network
+  connection. That is the price of instant resume in Phase 1; Phase 2 can
+  decide whether to stop and re-open on long pauses.
 - Seeking is slower than a seekable file, but correct for a network pipe.
 
 ## Alternatives considered

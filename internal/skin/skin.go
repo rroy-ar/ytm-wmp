@@ -131,17 +131,20 @@ func readDir(root string) (map[string][]byte, error) {
 			return nil
 		}
 
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.Size() > maxAssetBytes {
-			return fmt.Errorf("asset %q is too large (%d bytes)", name, info.Size())
-		}
-
-		data, err := os.ReadFile(file)
+		f, err := os.Open(file)
 		if err != nil {
 			return fmt.Errorf("read asset %q: %w", name, err)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(f, maxAssetBytes+1))
+		closeErr := f.Close()
+		if readErr != nil {
+			return fmt.Errorf("read asset %q: %w", name, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("read asset %q: %w", name, closeErr)
+		}
+		if len(data) > maxAssetBytes {
+			return fmt.Errorf("asset %q exceeds the %d-byte limit", name, maxAssetBytes)
 		}
 		return buf.add(name, data)
 	})

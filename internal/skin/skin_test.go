@@ -45,19 +45,23 @@ func TestOpenDirectoryNormalizesNamesAndLoadsSprites(t *testing.T) {
 }
 
 func TestOpenZipHandlesNestedDirsAndBackslashes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "skin.wsz")
-	writeZip(t, path, map[string][]byte{
-		`MySkin\MAIN.BMP`:            bmpBytes(t, 275, 116),
-		"nested/CBUTTONS.BMP":        bmpBytes(t, 136, 36),
-		"nested/deeper/TITLEBAR.BMP": bmpBytes(t, 312, 87),
-	})
+	for _, extension := range []string{".wsz", ".zip"} {
+		t.Run(extension, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "skin"+extension)
+			writeZip(t, path, map[string][]byte{
+				`MySkin\MAIN.BMP`:            bmpBytes(t, 275, 116),
+				"nested/CBUTTONS.BMP":        bmpBytes(t, 136, 36),
+				"nested/deeper/TITLEBAR.BMP": bmpBytes(t, 312, 87),
+			})
 
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open = %v", err)
-	}
-	if _, _, ok := s.Lookup(TitlebarActive); !ok {
-		t.Fatal("Lookup(TitlebarActive) failed")
+			s, err := Open(path)
+			if err != nil {
+				t.Fatalf("Open = %v", err)
+			}
+			if _, _, ok := s.Lookup(TitlebarActive); !ok {
+				t.Fatal("Lookup(TitlebarActive) failed")
+			}
+		})
 	}
 }
 

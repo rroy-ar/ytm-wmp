@@ -106,6 +106,24 @@ func TestEbitenSinkCloseStopsCurrentPlayback(t *testing.T) {
 	sink.Close()
 }
 
+func TestEbitenSinkSkipsPlayForCanceledContext(t *testing.T) {
+	calls := 0
+	sink := newEbitenSink(func(io.Reader) (pcmPlayer, error) {
+		calls++
+		return newFakePlayer(&recorder{}), nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := sink.Play(ctx, newSinkSource())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Play = %v, want context.Canceled", err)
+	}
+	if calls != 0 {
+		t.Fatalf("factory calls = %d, want 0", calls)
+	}
+}
+
 func TestEbitenSinkReportsFactoryErrors(t *testing.T) {
 	sink := newEbitenSink(func(io.Reader) (pcmPlayer, error) {
 		return nil, errors.New("no audio device")

@@ -92,6 +92,9 @@ func (s *EbitenSink) Init() error {
 // close the source first: a read blocked on a stalled network pipe must return
 // before PauseAndStopReading is allowed to wait for it.
 func (s *EbitenSink) Play(ctx context.Context, src Source) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := s.Init(); err != nil {
 		return err
 	}

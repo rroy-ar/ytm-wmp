@@ -2,7 +2,10 @@ module ytm-wmp
 
 go 1.27.3
 
-require github.com/gopxl/beep v1.4.1
+require (
+	github.com/gopxl/beep v1.4.1
+	golang.org/x/image v0.47.0
+)
 
 require (
 	github.com/ebitengine/oto/v3 v3.5.0 // indirect

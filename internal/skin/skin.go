@@ -27,8 +27,14 @@ const (
 	// maxAssetBytes caps a single decoded sheet. Classic skins are tiny;
 	// anything larger is either corrupt or a decompression bomb.
 	maxAssetBytes = 8 << 20
+	// maxSkinBytes caps all BMP bytes held for one skin.
+	maxSkinBytes = 32 << 20
+	// maxTotalPixels caps decoded image memory before any sheet is allocated.
+	maxTotalPixels = 16 << 20
 	// maxAssets caps the number of files inspected in one skin.
 	maxAssets = 256
+	// maxZipEntries bounds work for archives full of unrelated files.
+	maxZipEntries = 1024
 	// maxImageSide rejects absurd dimensions before the image is allocated.
 	maxImageSide = 4096
 )
@@ -43,7 +49,8 @@ var ErrModernSkin = errors.New("modern Winamp skins are not supported")
 // Sheets are keyed by lowercased basename, so "Main.BMP" from any nested
 // directory becomes "main.bmp". The zero value is not usable.
 type Skin struct {
-	sheets map[string]image.Image
+	sheets   map[string]image.Image
+	warnings []string
 }
 
 // Open loads a skin from a directory, .wsz, or .zip. The extension is not
@@ -54,17 +61,31 @@ func Open(name string) (*Skin, error) {
 		return nil, fmt.Errorf("open skin %q: %w", name, err)
 	}
 
+	// WalkDir does not follow a symlink at its root. Resolve the path first so
+	// a symlinked skin directory behaves like the directory it points at.
+	root := name
+	if resolved, err := filepath.EvalSymlinks(name); err == nil {
+		root = resolved
+	}
+
 	var assets map[string][]byte
 	if info.IsDir() {
-		assets, err = readDir(name)
+		assets, err = readDir(root)
 	} else {
-		assets, err = readZip(name)
+		assets, err = readZip(root)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open skin %q: %w", name, err)
 	}
 
 	return decode(assets)
+}
+
+// Warnings returns per-asset problems that did not prevent the skin from
+// loading, such as an unsupported optional BMP. The UI can render placeholders
+// for the affected sprites and still show the rest of the skin.
+func (s *Skin) Warnings() []string {
+	return append([]string(nil), s.warnings...)
 }
 
 // SheetNames returns the decoded sheet basenames in sorted order.
@@ -161,6 +182,10 @@ func readZip(name string) (map[string][]byte, error) {
 	}
 	defer zr.Close()
 
+	if len(zr.File) > maxZipEntries {
+		return nil, fmt.Errorf("ZIP contains %d entries, limit is %d", len(zr.File), maxZipEntries)
+	}
+
 	buf := newAssetBuffer()
 	for _, file := range zr.File {
 		if file.FileInfo().IsDir() {
@@ -230,6 +255,7 @@ func normalizeName(name string) (normalized string, skip bool, err error) {
 
 type assetBuffer struct {
 	assets map[string][]byte
+	bytes  int
 }
 
 func newAssetBuffer() *assetBuffer {
@@ -243,7 +269,11 @@ func (b *assetBuffer) add(name string, data []byte) error {
 	if _, exists := b.assets[name]; exists {
 		return fmt.Errorf("duplicate skin asset %q", name)
 	}
+	if b.bytes+len(data) > maxSkinBytes {
+		return fmt.Errorf("skin BMP assets exceed the %d-byte limit", maxSkinBytes)
+	}
 	b.assets[name] = data
+	b.bytes += len(data)
 	return nil
 }
 
@@ -259,20 +289,38 @@ func decode(assets map[string][]byte) (*Skin, error) {
 	sort.Strings(names)
 
 	s := &Skin{sheets: make(map[string]image.Image, len(assets))}
+	totalPixels := 0
 	for _, name := range names {
 		data := assets[name]
+		optional := name != "main.bmp"
 
 		cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 		if err != nil {
+			if optional {
+				s.warnings = append(s.warnings, fmt.Sprintf("%s: %v", name, err))
+				continue
+			}
 			return nil, fmt.Errorf("decode skin asset %q: %w", name, err)
 		}
 		if cfg.Width > maxImageSide || cfg.Height > maxImageSide {
-			return nil, fmt.Errorf("decode skin asset %q: image is %dx%d, limit is %dx%d",
-				name, cfg.Width, cfg.Height, maxImageSide, maxImageSide)
+			err := fmt.Errorf("image is %dx%d, limit is %dx%d", cfg.Width, cfg.Height, maxImageSide, maxImageSide)
+			if optional {
+				s.warnings = append(s.warnings, fmt.Sprintf("%s: %v", name, err))
+				continue
+			}
+			return nil, fmt.Errorf("decode skin asset %q: %w", name, err)
+		}
+		totalPixels += cfg.Width * cfg.Height
+		if totalPixels > maxTotalPixels {
+			return nil, fmt.Errorf("skin images exceed the %d-pixel budget", maxTotalPixels)
 		}
 
 		img, err := bmp.Decode(bytes.NewReader(data))
 		if err != nil {
+			if optional {
+				s.warnings = append(s.warnings, fmt.Sprintf("%s: %v", name, err))
+				continue
+			}
 			return nil, fmt.Errorf("decode skin asset %q: %w", name, err)
 		}
 		s.sheets[name] = ensureOpaque(img)

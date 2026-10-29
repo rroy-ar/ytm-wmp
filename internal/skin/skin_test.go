@@ -134,6 +134,73 @@ func TestOpenRejectsOversizedDimensionsBeforeDecoding(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsTotalPixelBudget(t *testing.T) {
+	dir := t.TempDir()
+	writeSheet(t, dir, "main.bmp", 275, 116)
+	writeTextBytes(t, dir, "huge.bmp", bmpHeader(4096, 4096))
+
+	_, err := Open(dir)
+	if err == nil || !strings.Contains(err.Error(), "pixel budget") {
+		t.Fatalf("Open = %v, want total pixel budget error", err)
+	}
+}
+
+func TestAssetBufferRejectsTotalBytes(t *testing.T) {
+	buf := newAssetBuffer()
+	if err := buf.add("first.bmp", make([]byte, maxSkinBytes)); err != nil {
+		t.Fatalf("add first: %v", err)
+	}
+	if err := buf.add("second.bmp", []byte{1}); err == nil {
+		t.Fatal("add beyond the total byte limit succeeded")
+	}
+}
+
+func TestOpenFallsBackFromBrokenOptionalSheet(t *testing.T) {
+	dir := t.TempDir()
+	writeSheet(t, dir, "main.bmp", 275, 116)
+	writeText(t, dir, "cbuttons.bmp", "not a bitmap")
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open = %v, want a usable main window", err)
+	}
+	if _, _, ok := s.Lookup(PlayButton); ok {
+		t.Fatal("broken optional sheet produced a play sprite")
+	}
+	if got := strings.Join(s.Warnings(), "|"); !strings.Contains(got, "cbuttons.bmp") {
+		t.Fatalf("Warnings = %q, want a cbuttons.bmp warning", got)
+	}
+}
+
+func TestOpenFollowsSymlinkedDirectory(t *testing.T) {
+	realDir := filepath.Join(t.TempDir(), "real-skin")
+	writeSheet(t, realDir, "main.bmp", 275, 116)
+	link := filepath.Join(t.TempDir(), "linked-skin")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	s, err := Open(link)
+	if err != nil {
+		t.Fatalf("Open(symlink) = %v", err)
+	}
+	if _, ok := s.Sheet("main.bmp"); !ok {
+		t.Fatal("symlinked skin did not load main.bmp")
+	}
+}
+
+func TestOpenRejectsZipTraversal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "evil.wsz")
+	writeZip(t, path, map[string][]byte{
+		"../main.bmp": bmpBytes(t, 275, 116),
+	})
+
+	_, err := Open(path)
+	if err == nil || !strings.Contains(err.Error(), "invalid skin asset path") {
+		t.Fatalf("Open = %v, want path traversal rejection", err)
+	}
+}
+
 func TestLookupMissingAndUnknownSprites(t *testing.T) {
 	dir := t.TempDir()
 	writeSheet(t, dir, "main.bmp", 100, 100) // too small for the full background
@@ -203,6 +270,16 @@ func TestEnsureOpaqueOnlyRewritesAllZeroAlpha(t *testing.T) {
 	withAlpha.SetRGBA(0, 0, color.RGBA{R: 1, G: 2, B: 3, A: 128})
 	if got := ensureOpaque(withAlpha); got != withAlpha {
 		t.Fatal("ensureOpaque rewrote an image with real alpha data")
+	}
+
+	nrgba := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	nrgba.SetNRGBA(0, 0, color.NRGBA{R: 10, G: 20, B: 30, A: 0})
+	got = ensureOpaque(nrgba)
+	if got == nrgba {
+		t.Fatal("ensureOpaque kept the all-zero-alpha NRGBA image")
+	}
+	if _, _, _, a := got.At(0, 0).RGBA(); a != 0xffff {
+		t.Fatalf("NRGBA alpha = %d, want opaque", a)
 	}
 }
 

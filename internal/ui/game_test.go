@@ -22,6 +22,9 @@ func TestPlayStartsThenPauseAndResume(t *testing.T) {
 	g.onClick(WidgetPlay)
 	waitStarted(t, runner)
 
+	if control.beginCount() != 1 {
+		t.Fatalf("Begin calls = %d, want 1", control.beginCount())
+	}
 	if !g.started || g.paused {
 		t.Fatalf("state after play: started=%v paused=%v", g.started, g.paused)
 	}
@@ -246,6 +249,7 @@ type fakeControl struct {
 	mu      sync.Mutex
 	initErr error
 	inits   int
+	begins  int
 	pauses  int
 	resumes int
 	closes  int
@@ -256,6 +260,12 @@ func (c *fakeControl) Init() error {
 	defer c.mu.Unlock()
 	c.inits++
 	return c.initErr
+}
+
+func (c *fakeControl) Begin() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.begins++
 }
 
 func (c *fakeControl) Pause() {
@@ -280,6 +290,12 @@ func (c *fakeControl) initCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inits
+}
+
+func (c *fakeControl) beginCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.begins
 }
 
 func (c *fakeControl) pauseCount() int {

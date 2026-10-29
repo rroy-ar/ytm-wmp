@@ -119,6 +119,28 @@ func TestEbitenSinkPauseDuringResolveStartsPaused(t *testing.T) {
 	}
 }
 
+func TestEbitenSinkBeginClearsStalePause(t *testing.T) {
+	player := newFakePlayer(&recorder{})
+	src := newSinkSource()
+	sink := newEbitenSink(factoryFor(player))
+
+	// A pause left over from a failed resolve must not affect the next attempt.
+	sink.Pause()
+	sink.Begin()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- sink.Play(context.Background(), src) }()
+	waitPlayerStart(t, player)
+
+	if got := player.playCount(); got != 1 {
+		t.Fatalf("Play calls = %d, want 1", got)
+	}
+	src.finish()
+	if err := waitPlayback(t, errCh); err != nil {
+		t.Fatalf("Play = %v, want nil", err)
+	}
+}
+
 func TestEbitenSinkCloseStopsCurrentPlayback(t *testing.T) {
 	player := newFakePlayer(&recorder{})
 	src := newSinkSource()

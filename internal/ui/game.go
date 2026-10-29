@@ -30,6 +30,7 @@ type Runner interface {
 // ffmpeg ownership stay inside internal/audio.
 type AudioControl interface {
 	Init() error
+	Begin()
 	Pause()
 	Resume()
 	Close()
@@ -172,6 +173,7 @@ func (g *Game) onClick(id string) {
 }
 
 func (g *Game) start() {
+	g.sink.Begin()
 	g.started = true
 	g.paused = false
 	g.errText = ""

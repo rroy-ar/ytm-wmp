@@ -138,6 +138,14 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	}
 }
 
+// Begin clears pause intent left over from a previous session. The UI calls it
+// once per new play attempt, before resolution starts.
+func (s *EbitenSink) Begin() {
+	s.mu.Lock()
+	s.pausePending = false
+	s.mu.Unlock()
+}
+
 // Pause stops the clock but keeps ffmpeg and the buffered pipe alive. If the
 // player has not been created yet (resolution is still running), the request is
 // remembered and applied before the first Play call.

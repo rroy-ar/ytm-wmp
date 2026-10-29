@@ -1,1 +1,3 @@
+# Local build outputs. Never commit binaries.
+/main
 /winamp-ytm

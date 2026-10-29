@@ -29,7 +29,12 @@ Phase 1 switches playback to `ebiten/v2/audio`:
   `Close()`), after closing the ffmpeg pipe;
 - never seek the player: recreate ffmpeg and the player at the target offset;
 - tear down in this order: close/cancel the source, then
-  `PauseAndStopReading`, then wait for the read loop and process to finish.
+  `PauseAndStopReading`, then wait for the read loop and process to finish;
+- after the reader observes stdout EOF, wait for ffmpeg to exit normally
+  instead of killing it in the EOF window; cancellation and explicit stops
+  still kill first;
+- defer a pause request made while yt-dlp is still resolving until the player
+  exists, and clear stale pause intent at the start of a new attempt.
 
 The spike confirmed that creating the context on the first tick works and keeps
 device initialization off the startup path. `AudioControl` and `pcmPlayer`

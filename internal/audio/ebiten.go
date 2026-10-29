@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"time"
 
 	ebitenaudio "github.com/hajimehoshi/ebiten/v2/audio"
 )
@@ -19,8 +18,6 @@ type pcmPlayer interface {
 	Play()
 	Pause()
 	PauseAndStopReading()
-	IsPlaying() bool
-	Position() time.Duration
 }
 
 type playerFactory func(io.Reader) (pcmPlayer, error)
@@ -36,9 +33,10 @@ type EbitenSink struct {
 	initErr  error
 	factory  playerFactory
 
-	mu     sync.Mutex
-	player pcmPlayer
-	src    Source
+	mu           sync.Mutex
+	player       pcmPlayer
+	src          Source
+	pausePending bool
 
 	teardownMu sync.Mutex
 }
@@ -101,6 +99,8 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 
 	s.mu.Lock()
 	factory := s.factory
+	startPaused := s.pausePending
+	s.pausePending = false
 	s.mu.Unlock()
 	if factory == nil {
 		return errors.New("audio context is not initialized")
@@ -112,11 +112,18 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	}
 
 	// Publish the player before starting it so a pause arriving immediately
-	// after a click cannot race past the pending Play call.
+	// after a click cannot race past the pending Play call. A pause requested
+	// while yt-dlp was resolving is applied here instead of being lost.
 	s.mu.Lock()
 	s.player = player
 	s.src = src
-	player.Play()
+	paused := startPaused || s.pausePending
+	s.pausePending = false
+	if paused {
+		player.Pause()
+	} else {
+		player.Play()
+	}
 	s.mu.Unlock()
 
 	select {
@@ -131,10 +138,13 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	}
 }
 
-// Pause stops the clock but keeps ffmpeg and the buffered pipe alive.
+// Pause stops the clock but keeps ffmpeg and the buffered pipe alive. If the
+// player has not been created yet (resolution is still running), the request is
+// remembered and applied before the first Play call.
 func (s *EbitenSink) Pause() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pausePending = true
 	if s.player != nil {
 		s.player.Pause()
 	}
@@ -144,6 +154,7 @@ func (s *EbitenSink) Pause() {
 func (s *EbitenSink) Resume() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pausePending = false
 	if s.player != nil {
 		s.player.Play()
 	}
@@ -177,6 +188,7 @@ func (s *EbitenSink) teardown(player pcmPlayer, src Source) {
 	if s.player == player {
 		s.player = nil
 		s.src = nil
+		s.pausePending = false
 	}
 	s.mu.Unlock()
 }

@@ -17,6 +17,11 @@ import (
 const (
 	defaultFFmpeg      = "ffmpeg"
 	defaultStderrLimit = 8 << 10
+
+	// After stdout reaches EOF the process should exit almost immediately.
+	// This is only a safety valve against a wedged ffmpeg; the audio data is
+	// already complete at that point.
+	eofExitTimeout = 2 * time.Second
 )
 
 // Opener starts ffmpeg for a resolved stream URL.
@@ -120,6 +125,7 @@ type ffmpegSource struct {
 	done      chan struct{}
 
 	bytesRead atomic.Int64
+	eof       atomic.Bool
 
 	errMu   sync.Mutex
 	readErr error
@@ -135,6 +141,9 @@ func (s *ffmpegSource) Read(p []byte) (int, error) {
 		s.bytesRead.Add(int64(n))
 	}
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			s.eof.Store(true)
+		}
 		s.doneOnce.Do(func() { close(s.done) })
 
 		// A closed pipe is how teardown unblocks a reader. It is not a
@@ -152,20 +161,47 @@ func (s *ffmpegSource) Read(p []byte) (int, error) {
 
 func (s *ffmpegSource) Close() error {
 	s.closeOnce.Do(func() {
-		// Closing stdout first makes a reader blocked in Read return. Killing
-		// the process second prevents Wait from hanging on a stalled network
-		// read. Wait must run after the reader can no longer use the pipe.
+		// Closing stdout first makes a reader blocked in Read return. Wait
+		// must run after the reader can no longer use the pipe.
 		_ = s.stdout.Close()
-		if s.cmd.Process != nil {
-			_ = s.cmd.Process.Kill()
-		}
 
-		if err := s.cmd.Wait(); err != nil {
-			s.closeErr = &ProcessError{Err: err, Stderr: s.stderrText()}
+		if s.eof.Load() {
+			// The reader saw EOF, so all PCM data arrived. Do not kill the
+			// process in the tiny window between closing stdout and exiting;
+			// that would turn a normal track end into "signal: killed".
+			s.waitAfterEOF()
+		} else {
+			// Cancellation or an explicit stop: kill first so a stalled
+			// network read cannot make Wait hang forever.
+			if s.cmd.Process != nil {
+				_ = s.cmd.Process.Kill()
+			}
+			if err := s.cmd.Wait(); err != nil {
+				s.closeErr = &ProcessError{Err: err, Stderr: s.stderrText()}
+			}
 		}
 		s.doneOnce.Do(func() { close(s.done) })
 	})
 	return s.closeErr
+}
+
+func (s *ffmpegSource) waitAfterEOF() {
+	done := make(chan error, 1)
+	go func() { done <- s.cmd.Wait() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			s.closeErr = &ProcessError{Err: err, Stderr: s.stderrText()}
+		}
+	case <-time.After(eofExitTimeout):
+		// EOF means every byte the player needed was already read. Reap a
+		// wedged process, but do not report it as a playback failure.
+		if s.cmd.Process != nil {
+			_ = s.cmd.Process.Kill()
+		}
+		<-done
+	}
 }
 
 func (s *ffmpegSource) Err() error {

@@ -85,6 +85,40 @@ func TestEbitenSinkPauseAndResumeKeepTheSamePlayer(t *testing.T) {
 	}
 }
 
+func TestEbitenSinkPauseDuringResolveStartsPaused(t *testing.T) {
+	player := newFakePlayer(&recorder{})
+	created := make(chan struct{})
+	release := make(chan struct{})
+	sink := newEbitenSink(func(io.Reader) (pcmPlayer, error) {
+		close(created)
+		<-release
+		return player, nil
+	})
+	src := newSinkSource()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- sink.Play(context.Background(), src) }()
+	<-created
+
+	// The user clicked pause while yt-dlp was still resolving.
+	sink.Pause()
+	close(release)
+	waitForPublishedPlayer(t, sink)
+
+	if got := player.playCount(); got != 0 {
+		t.Fatalf("Play calls before resume = %d, want 0", got)
+	}
+	sink.Resume()
+	if got := player.playCount(); got != 1 {
+		t.Fatalf("Play calls after resume = %d, want 1", got)
+	}
+
+	src.finish()
+	if err := waitPlayback(t, errCh); err != nil {
+		t.Fatalf("Play = %v, want nil", err)
+	}
+}
+
 func TestEbitenSinkCloseStopsCurrentPlayback(t *testing.T) {
 	player := newFakePlayer(&recorder{})
 	src := newSinkSource()
@@ -243,6 +277,21 @@ func (p *fakePlayer) stopCount() int {
 
 func factoryFor(player *fakePlayer) playerFactory {
 	return func(io.Reader) (pcmPlayer, error) { return player, nil }
+}
+
+func waitForPublishedPlayer(t *testing.T, sink *EbitenSink) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		sink.mu.Lock()
+		published := sink.player != nil
+		sink.mu.Unlock()
+		if published {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("player was not published")
 }
 
 func waitPlayerStart(t *testing.T, player *fakePlayer) {

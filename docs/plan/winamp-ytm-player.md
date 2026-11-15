@@ -974,8 +974,15 @@ only formats debug/error text when those overlays are visible.
 
 ## 14. Commit trail and next work
 
-Actual Phase 0-1 trail as of this update (newest first):
+Recent trail as of this update (newest first):
 
+- `2e8140d` docs: record Phase 3A completion in plan and README
+- `7afb246` feat(ui): add catalog browser, metadata enrichment, and artwork display
+- `d430f21` feat(catalog): add catalog, ytdlp backend, artwork cache, and ytmctl
+- `aaa192e` docs: record Phase 2 completion and multi-track controls
+- `cb58bce` feat(playback): add actor controller, queue, seek, recovery, and UI wiring
+- `e94e7dc` feat(audio): add volume, position, and first-pcm timing to audio sink
+- `538516e` docs(plan): record phase 0-1 outcomes and current architecture
 - `52c0c0a` docs(adr): record graceful EOF and deferred pause behavior
 - `1cfc98b` fix(audio): clear pause intent at the start of each play attempt
 - `7a733b1` fix(ui): treat truncated sprites as missing and warn on skin issues
@@ -989,9 +996,10 @@ Actual Phase 0-1 trail as of this update (newest first):
 - `d4d9042` feat(skin): load classic .wsz archives and loose BMP directories
 - `1858514` refactor: land phase 0 architecture seams
 
-Phase 2 starts with the transition table and command/event types, then the queue,
-then the actor, then seek/EOF/recovery. A beautiful UI on a fragile playback
-engine is still the wrong order.
+Next up is Phase 4A (port the remaining Webamp sprite table, `pledit.txt` /
+`viscolor.txt`, bitmap text/digits, and main-window sliders/toggles, plus skin
+fuzzing), or optional Phase 3B (`internal/catalog/ytmusic`) if direct YouTube
+Music song results are preferred before skinning the rest of the windows.
 
 ## 15. Open questions
 

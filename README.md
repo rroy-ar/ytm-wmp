@@ -8,6 +8,52 @@ artwork caching, the `cmd/ytmctl` debug CLI, and an integrated browser panel
 below the skinned 275x116 main window (total logical canvas 275x348). Persistence
 and the full classic playlist/EQ skin system come in Phases 4-5.
 
+## Project Status
+
+### What has been done
+
+- **Phase 0 — Baseline & Seams**: isolated `internal/model`, `internal/deps`
+  startup checks, `internal/ytdlp` stream resolution with a 5-hour video-ID URL
+  cache, `internal/audio` `ffmpeg` `f32le` 48 kHz stereo PCM source with bounded
+  stderr ring buffer, and offline unit/fake-process tests.
+- **Phase 1 — Walking Skeleton**: Ebitengine v2.10.5 UI loop, pure-Go
+  `.wsz`/`.zip`/directory skin loader (`internal/skin`) with resource caps and
+  modern `skin.xml` rejection, GPU sheet upload and `SubImage` cache
+  (`internal/ui/skinview`), immediate-mode hit testing, `ebiten/v2/audio` sink
+  with clean EOF/teardown handling, original `assets/dev-skin/`, and `F1` debug
+  overlay.
+- **Phase 2 — Playback Core**: headless actor `playback.Controller`, state
+  transition table, queue with history, non-repeating shuffle bag, repeat modes
+  (`off`/`all`/`one`), generation-tagged workers, seek-by-reopen (`-ss`),
+  next-track URL prefetching, stale-URL retry, error taxonomy, and full
+  transport button/keyboard wiring.
+- **Phase 3A — Catalog, Metadata & Artwork**: `catalog.Catalog` interface,
+  debounced generation-tagged `Searcher`, `internal/catalog/ytdlp` (`yt-dlp -J`
+  search, track metadata, playlist extraction, stdout caps, in-memory caches),
+  `internal/artwork` (JPEG/PNG/WebP decode, `64x64` and `300x300` resize,
+  atomic disk cache, in-memory LRU, placeholder), `cmd/ytmctl` debug CLI,
+  `playback.UpdateTrack` background enrichment, and the integrated browser
+  panel with `-query` / `-playlist` flags.
+
+### What's next
+
+- **Phase 3B (optional)**: YouTube Music InnerTube `WEB_REMIX` catalog backend
+  in `internal/catalog/ytmusic` (keeping `yt-dlp` for stream resolution).
+- **Phase 4 — Classic Skin System**: complete Webamp sprite table, bitmap
+  `text.bmp`/`numbers.bmp` rendering, position/volume/balance sliders,
+  shuffle/repeat/EQ/PL toggles, `pledit.txt`/`viscolor.txt`, internal draggable
+  window manager, skinned playlist (`pledit.bmp`) and equalizer (`eqmain.bmp`)
+  windows, and skin loader fuzzing.
+- **Phase 5 — Full Player UX & Persistence**: versioned atomic JSON persistence
+  for skin, volume, queue, and window positions; M3U import/export; error
+  toasts; and settings UI.
+- **Phase 6 (optional) & Phase 7**: EQ DSP, spectrum/oscilloscope visualizer,
+  shade/2x/`region.txt` modes, performance/allocation profiling, packaging, and
+  `v0.1` release hardening.
+
+See [`docs/plan/winamp-ytm-player.md`](docs/plan/winamp-ytm-player.md) for the
+detailed plan and [`AGENTS.md`](AGENTS.md) for repo conventions.
+
 ## Requirements
 
 - Go 1.27+ (matching `go.mod`)
@@ -113,6 +159,7 @@ Layout:
 | `assets/dev-skin` | original loose-BMP development skin |
 | `docs/plan` | delivery plan |
 | `docs/adr` | architecture decisions |
+| `AGENTS.md` | repository guide and workflow rules for agents |
 
 ## House rules
 

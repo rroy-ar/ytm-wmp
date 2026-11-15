@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,113 +10,75 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
 )
 
-func TestPlayStartsThenPauseAndResume(t *testing.T) {
-	runner := newFakeRunner()
-	control := &fakeControl{}
-	g := NewGame(context.Background(), "track", nil, runner, control)
+func TestTransportButtonsSendPlaybackCommands(t *testing.T) {
+	ctrl := newFakeController()
+	sink := &fakeAudioLifecycle{}
+	g := NewGame(context.Background(), nil, ctrl, sink)
+	defer g.Close()
 
 	g.onClick(WidgetPlay)
-	waitStarted(t, runner)
-
-	if control.beginCount() != 1 {
-		t.Fatalf("Begin calls = %d, want 1", control.beginCount())
-	}
-	if !g.started || g.paused {
-		t.Fatalf("state after play: started=%v paused=%v", g.started, g.paused)
-	}
-
 	g.onClick(WidgetPause)
-	if control.pauseCount() != 1 {
-		t.Fatalf("pause calls = %d, want 1", control.pauseCount())
-	}
-	if !g.paused {
-		t.Fatal("game should be paused")
-	}
+	g.onClick(WidgetStop)
+	g.onClick(WidgetNext)
+	g.onClick(WidgetPrevious)
 
-	g.onClick(WidgetPlay)
-	if control.resumeCount() != 1 {
-		t.Fatalf("resume calls = %d, want 1", control.resumeCount())
+	cmds := ctrl.sentCommands()
+	if len(cmds) != 5 {
+		t.Fatalf("commands = %T (%d), want 5 commands", cmds, len(cmds))
 	}
-	if g.paused {
-		t.Fatal("game should have resumed")
+	if _, ok := cmds[0].(playback.Play); !ok {
+		t.Fatalf("cmd[0] = %T, want playback.Play", cmds[0])
 	}
-
-	runner.result <- nil
-	waitForPlaybackEnd(t, g)
-	if g.started {
-		t.Fatal("started should be false after playback ends")
+	if _, ok := cmds[1].(playback.Pause); !ok {
+		t.Fatalf("cmd[1] = %T, want playback.Pause", cmds[1])
 	}
-}
-
-func TestPlayWhileAlreadyPlayingDoesNotResume(t *testing.T) {
-	runner := newFakeRunner()
-	control := &fakeControl{}
-	g := NewGame(context.Background(), "track", nil, runner, control)
-
-	g.onClick(WidgetPlay)
-	waitStarted(t, runner)
-	g.onClick(WidgetPlay)
-
-	if control.resumeCount() != 0 {
-		t.Fatalf("resume calls = %d, want 0", control.resumeCount())
+	if _, ok := cmds[2].(playback.Stop); !ok {
+		t.Fatalf("cmd[2] = %T, want playback.Stop", cmds[2])
 	}
-	runner.result <- nil
-	waitForPlaybackEnd(t, g)
-}
-
-func TestPauseWhileIdleIsIgnored(t *testing.T) {
-	g := NewGame(context.Background(), "track", nil, newFakeRunner(), &fakeControl{})
-	g.onClick(WidgetPause)
-	if g.paused {
-		t.Fatal("pausing an idle player should do nothing")
+	if _, ok := cmds[3].(playback.Next); !ok {
+		t.Fatalf("cmd[3] = %T, want playback.Next", cmds[3])
+	}
+	if _, ok := cmds[4].(playback.Prev); !ok {
+		t.Fatalf("cmd[4] = %T, want playback.Prev", cmds[4])
 	}
 }
 
-func TestPlaybackErrorBecomesVisibleText(t *testing.T) {
-	runner := newFakeRunner()
-	g := NewGame(context.Background(), "track", nil, runner, &fakeControl{})
+func TestPlaybackErrorEventBecomesVisibleTextAndClearsOnPlay(t *testing.T) {
+	ctrl := newFakeController()
+	g := NewGame(context.Background(), nil, ctrl, &fakeAudioLifecycle{})
+	defer g.Close()
 
-	g.onClick(WidgetPlay)
-	waitStarted(t, runner)
-	g.errText = ""
-
-	runner.result <- errors.New("yt-dlp not found")
-	waitForPlaybackEnd(t, g)
-
-	if g.started {
-		t.Fatal("started should be false after an error")
-	}
+	ctrl.events <- playback.PlaybackError{Message: "yt-dlp not found"}
+	g.drainEvents()
 	if !strings.Contains(g.errText, "yt-dlp not found") {
-		t.Fatalf("errText = %q, want the playback error", g.errText)
+		t.Fatalf("errText = %q, want playback error", g.errText)
 	}
 
-	// A new play attempt clears the old error before starting.
 	g.onClick(WidgetPlay)
 	if g.errText != "" {
-		t.Fatalf("errText = %q, want cleared on retry", g.errText)
+		t.Fatalf("errText = %q, want cleared on Play", g.errText)
 	}
-	g.Close()
 }
 
-func TestCloseCancelsPlaybackAndClosesSink(t *testing.T) {
-	runner := newFakeRunner()
-	control := &fakeControl{}
-	g := NewGame(context.Background(), "track", nil, runner, control)
+func TestCloseStopsActorBeforeClosingSink(t *testing.T) {
+	ctrl := newFakeController()
+	sink := &fakeAudioLifecycle{}
+	g := NewGame(context.Background(), nil, ctrl, sink)
 
-	g.onClick(WidgetPlay)
-	waitStarted(t, runner)
+	ctrl.waitRunning(t)
 	g.Close()
 
-	if control.closeCount() != 1 {
-		t.Fatalf("close calls = %d, want 1", control.closeCount())
+	if sink.closeCount() != 1 {
+		t.Fatalf("close calls = %d, want 1", sink.closeCount())
 	}
 	select {
-	case <-runner.ctxDone:
+	case <-ctrl.exited:
 	case <-time.After(time.Second):
-		t.Fatal("playback context was not canceled")
+		t.Fatal("actor Run did not exit before Close returned")
 	}
 }
 
@@ -126,15 +87,15 @@ func TestFirstUpdateInitializesAudioAndSkinView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(dev skin) = %v", err)
 	}
-	control := &fakeControl{}
-	g := NewGame(context.Background(), "track", s, newFakeRunner(), control)
+	sink := &fakeAudioLifecycle{}
+	g := NewGame(context.Background(), s, newFakeController(), sink)
 	defer g.Close()
 
 	if err := g.Update(); err != nil {
 		t.Fatalf("Update = %v", err)
 	}
-	if control.initCount() != 1 {
-		t.Fatalf("audio Init calls = %d, want 1", control.initCount())
+	if sink.initCount() != 1 {
+		t.Fatalf("audio Init calls = %d, want 1", sink.initCount())
 	}
 	if g.view == nil {
 		t.Fatal("skin view was not created on the first Update")
@@ -144,8 +105,8 @@ func TestFirstUpdateInitializesAudioAndSkinView(t *testing.T) {
 	if err := g.Update(); err != nil {
 		t.Fatalf("second Update = %v", err)
 	}
-	if control.initCount() != 1 {
-		t.Fatalf("audio Init calls after two ticks = %d, want 1", control.initCount())
+	if sink.initCount() != 1 {
+		t.Fatalf("audio Init calls after two ticks = %d, want 1", sink.initCount())
 	}
 }
 
@@ -154,7 +115,7 @@ func TestDrawRendersSkinAndDebugOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(dev skin) = %v", err)
 	}
-	g := NewGame(context.Background(), "track", s, newFakeRunner(), &fakeControl{})
+	g := NewGame(context.Background(), s, newFakeController(), &fakeAudioLifecycle{})
 	defer g.Close()
 	if err := g.Update(); err != nil {
 		t.Fatalf("Update = %v", err)
@@ -163,12 +124,8 @@ func TestDrawRendersSkinAndDebugOverlay(t *testing.T) {
 	screen := ebiten.NewImage(WindowWidth, WindowHeight)
 	g.Draw(screen)
 
-	// Pixel readback panics until the game loop has started, so this is a
-	// panic/smoke test rather than a golden-image test. The live smoke run and
-	// the screenshot review cover visual output.
 	g.toggleDebug()
 	g.Draw(screen)
-
 }
 
 func TestToggleDebug(t *testing.T) {
@@ -197,120 +154,88 @@ func TestWrapText(t *testing.T) {
 	}
 }
 
-type fakeRunner struct {
-	started sync.Once
-	start   chan struct{}
-	result  chan error
-	ctxDone chan struct{}
+type fakeController struct {
+	events  chan playback.Event
+	started chan struct{}
+	exited  chan struct{}
+
+	mu   sync.Mutex
+	cmds []playback.Command
+	snap playback.Snapshot
 }
 
-func newFakeRunner() *fakeRunner {
-	return &fakeRunner{
-		start:   make(chan struct{}),
-		result:  make(chan error, 1),
-		ctxDone: make(chan struct{}),
+func newFakeController() *fakeController {
+	return &fakeController{
+		events:  make(chan playback.Event, 16),
+		started: make(chan struct{}),
+		exited:  make(chan struct{}),
+		snap:    playback.Snapshot{State: playback.StateIdle, Index: -1, Volume: 1},
 	}
 }
 
-func (r *fakeRunner) Play(ctx context.Context, _ string) error {
-	r.started.Do(func() { close(r.start) })
-	select {
-	case err := <-r.result:
-		return err
-	case <-ctx.Done():
-		close(r.ctxDone)
-		return ctx.Err()
-	}
+func (c *fakeController) Run(ctx context.Context) {
+	close(c.started)
+	<-ctx.Done()
+	close(c.exited)
 }
 
-func waitStarted(t *testing.T, runner *fakeRunner) {
+func (c *fakeController) Send(cmd playback.Command) bool {
+	c.mu.Lock()
+	c.cmds = append(c.cmds, cmd)
+	c.mu.Unlock()
+	return true
+}
+
+func (c *fakeController) Events() <-chan playback.Event { return c.events }
+
+func (c *fakeController) Snapshot() playback.Snapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.snap
+}
+
+func (c *fakeController) sentCommands() []playback.Command {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]playback.Command(nil), c.cmds...)
+}
+
+func (c *fakeController) waitRunning(t *testing.T) {
 	t.Helper()
 	select {
-	case <-runner.start:
+	case <-c.started:
 	case <-time.After(time.Second):
-		t.Fatal("playback did not start")
+		t.Fatal("actor Run did not start")
 	}
 }
 
-func waitForPlaybackEnd(t *testing.T, g *Game) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		g.drainEvents()
-		if !g.started {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("playback result was not observed")
-}
-
-type fakeControl struct {
+type fakeAudioLifecycle struct {
 	mu      sync.Mutex
 	initErr error
 	inits   int
-	begins  int
-	pauses  int
-	resumes int
 	closes  int
 }
 
-func (c *fakeControl) Init() error {
+func (c *fakeAudioLifecycle) Init() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.inits++
 	return c.initErr
 }
 
-func (c *fakeControl) Begin() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.begins++
-}
-
-func (c *fakeControl) Pause() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pauses++
-}
-
-func (c *fakeControl) Resume() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.resumes++
-}
-
-func (c *fakeControl) Close() {
+func (c *fakeAudioLifecycle) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closes++
 }
 
-func (c *fakeControl) initCount() int {
+func (c *fakeAudioLifecycle) initCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inits
 }
 
-func (c *fakeControl) beginCount() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.begins
-}
-
-func (c *fakeControl) pauseCount() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.pauses
-}
-
-func (c *fakeControl) resumeCount() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.resumes
-}
-
-func (c *fakeControl) closeCount() int {
+func (c *fakeAudioLifecycle) closeCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closes

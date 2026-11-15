@@ -19,6 +19,7 @@ import (
 
 	"ytm-wmp/internal/audio"
 	"ytm-wmp/internal/deps"
+	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
 	"ytm-wmp/internal/ui"
@@ -41,7 +42,8 @@ func main() {
 }
 
 func run() error {
-	target := flag.String("url", defaultTarget, "YouTube video ID, watch URL, or yt-dlp search query")
+	var urlFlags stringListFlag
+	flag.Var(&urlFlags, "url", "YouTube video ID, watch URL, or yt-dlp search query (repeatable)")
 	skinFlag := flag.String("skin", "", "skin directory, .wsz, or .zip (default: bundled dev skin)")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
@@ -76,9 +78,17 @@ func run() error {
 
 	resolver := ytdlp.New(ytdlp.WithBinary(ytdlpTool.Path))
 	sink := audio.NewEbitenSink()
-	player := playback.New(resolver, audio.Opener{FFmpeg: ffmpegTool.Path}, sink)
-	game := ui.NewGame(ctx, *target, s, player, sink)
+	ctrl := playback.NewController(resolver, audio.Opener{FFmpeg: ffmpegTool.Path}, sink)
+	game := ui.NewGame(ctx, s, ctrl, sink)
 	defer game.Close()
+
+	tracks := initialTracks(urlFlags, flag.Args())
+	trackIDs := make([]string, len(tracks))
+	for i, t := range tracks {
+		trackIDs[i] = t.ID
+	}
+	slog.Debug("initial queue", "count", len(tracks), "tracks", trackIDs)
+	ctrl.Send(playback.SetQueue{Tracks: tracks, Index: 0})
 
 	ebiten.SetWindowTitle("ytm-wmp")
 	ebiten.SetWindowSize(ui.WindowWidth, ui.WindowHeight)
@@ -114,4 +124,35 @@ func chooseSkin(explicit string) string {
 		}
 	}
 	return devSkinPath
+}
+
+type stringListFlag []string
+
+func (f *stringListFlag) String() string {
+	return fmt.Sprintf("%v", []string(*f))
+}
+
+func (f *stringListFlag) Set(value string) error {
+	if value != "" {
+		*f = append(*f, value)
+	}
+	return nil
+}
+
+func initialTracks(flagTargets, extra []string) []model.Track {
+	var tracks []model.Track
+	for _, target := range flagTargets {
+		if target != "" {
+			tracks = append(tracks, model.Track{ID: target})
+		}
+	}
+	for _, arg := range extra {
+		if arg != "" {
+			tracks = append(tracks, model.Track{ID: arg})
+		}
+	}
+	if len(tracks) == 0 {
+		tracks = append(tracks, model.Track{ID: defaultTarget})
+	}
+	return tracks
 }

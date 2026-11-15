@@ -2,85 +2,87 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
 	"ytm-wmp/internal/ui/skinview"
 )
 
-// Runner plays one hardcoded target. Phase 2 replaces this with the playback
-// actor, but the UI only needs the narrow "start and report completion" view.
-type Runner interface {
-	Play(ctx context.Context, target string) error
+const (
+	seekStep   = 5 * time.Second
+	volumeStep = 0.1
+)
+
+// PlaybackController drives playback via commands, events, and atomic snapshots.
+type PlaybackController interface {
+	Run(ctx context.Context)
+	Send(cmd playback.Command) bool
+	Events() <-chan playback.Event
+	Snapshot() playback.Snapshot
 }
 
-// AudioControl is the consumer-owned view of the audio sink. The UI needs to
-// initialize the device, pause/resume, and release it on shutdown; decoding and
-// ffmpeg ownership stay inside internal/audio.
-type AudioControl interface {
+// AudioLifecycle initializes and closes the audio device on UI lifecycle
+// boundaries; playback control goes through PlaybackController.
+type AudioLifecycle interface {
 	Init() error
-	Begin()
-	Pause()
-	Resume()
 	Close()
 }
 
-type playbackResult struct {
-	err error
-}
-
 // Game is the Ebitengine application: a fixed 275x116 logical canvas, a skinned
-// main window, and play/pause controls.
+// main window, and transport controls wired to the playback actor.
 type Game struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	skin   *skin.Skin
-	runner Runner
-	sink   AudioControl
-	target string
+	skin *skin.Skin
+	ctrl PlaybackController
+	sink AudioLifecycle
 
 	view      *skinview.View
 	pointer   Pointer
 	debug     bool
 	audioInit bool
 
-	started bool
-	paused  bool
 	errText string
-	events  chan playbackResult
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
 }
 
-// NewGame wires the UI to a loaded skin, playback runner, and audio sink.
-// The parent context is canceled by Close, which stops in-flight playback.
-func NewGame(parent context.Context, target string, s *skin.Skin, runner Runner, sink AudioControl) *Game {
+// NewGame wires the UI to a loaded skin, playback controller, and audio sink.
+// It starts the playback actor under a derived context canceled by Close.
+func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink AudioLifecycle) *Game {
 	ctx, cancel := context.WithCancel(parent)
-	return &Game{
+	g := &Game{
 		ctx:    ctx,
 		cancel: cancel,
 		skin:   s,
-		runner: runner,
+		ctrl:   ctrl,
 		sink:   sink,
-		target: target,
-		events: make(chan playbackResult, 1),
 	}
+	if ctrl != nil {
+		g.wg.Add(1)
+		go func() {
+			defer g.wg.Done()
+			ctrl.Run(ctx)
+		}()
+	}
+	return g
 }
 
-// Update advances input, drains playback results, and enforces the fixed
+// Update advances input, drains playback events, and enforces the fixed
 // timestep. It returns ebiten.Termination when the parent context is canceled.
 func (g *Game) Update() error {
 	if g.ctx.Err() != nil {
@@ -91,8 +93,10 @@ func (g *Game) Update() error {
 	// started, so both happen on the first tick rather than in main.
 	if !g.audioInit {
 		g.audioInit = true
-		if err := g.sink.Init(); err != nil {
-			g.setError(fmt.Errorf("opening audio device: %w", err))
+		if g.sink != nil {
+			if err := g.sink.Init(); err != nil {
+				g.setError(fmt.Sprintf("opening audio device: %v", err))
+			}
 		}
 	}
 	if g.view == nil && g.skin != nil {
@@ -106,6 +110,7 @@ func (g *Game) Update() error {
 	if clicked != "" {
 		g.onClick(clicked)
 	}
+	g.handleKeys()
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyF1) {
 		g.toggleDebug()
@@ -141,71 +146,122 @@ func (g *Game) Layout(_, _ int) (int, int) {
 	return WindowWidth, WindowHeight
 }
 
-// Close cancels playback, waits for the playback goroutine, then releases the
-// audio device. The wait is important: it ensures no goroutine can start a new
-// ffmpeg process after the sink has been closed.
+// Close cancels the playback actor, waits for it to stop all workers and
+// ffmpeg processes, then releases the audio device.
 func (g *Game) Close() {
 	g.closeOnce.Do(func() {
-		g.cancel()
+		if g.cancel != nil {
+			g.cancel()
+		}
 		g.wg.Wait()
-		g.sink.Close()
+		if g.sink != nil {
+			g.sink.Close()
+		}
 	})
 }
 
 func (g *Game) onClick(id string) {
+	if g.ctrl == nil {
+		return
+	}
+	slog.Debug("ui button clicked", "widget", id)
 	switch id {
+	case WidgetPrevious:
+		g.errText = ""
+		g.ctrl.Send(playback.Prev{})
 	case WidgetPlay:
 		g.errText = ""
-		if g.started {
-			if g.paused {
-				g.sink.Resume()
-				g.paused = false
-			}
-			return
-		}
-		g.start()
+		g.ctrl.Send(playback.Play{})
 	case WidgetPause:
-		if g.started && !g.paused {
-			g.sink.Pause()
-			g.paused = true
-		}
+		g.ctrl.Send(playback.Pause{})
+	case WidgetStop:
+		g.errText = ""
+		g.ctrl.Send(playback.Stop{})
+	case WidgetNext:
+		g.errText = ""
+		g.ctrl.Send(playback.Next{})
 	}
 }
 
-func (g *Game) start() {
-	g.sink.Begin()
-	g.started = true
-	g.paused = false
-	g.errText = ""
-	slog.Debug("playback started")
+func (g *Game) handleKeys() {
+	if g.ctrl == nil {
+		return
+	}
+	snap := g.ctrl.Snapshot()
 
-	g.wg.Add(1)
-	go func() {
-		defer g.wg.Done()
-		err := g.runner.Play(g.ctx, g.target)
-		slog.Debug("playback finished", "err", err)
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		select {
-		case g.events <- playbackResult{err: err}:
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		slog.Debug("ui key", "key", "space", "state", snap.State.String())
+		switch snap.State {
+		case playback.StatePlaying:
+			g.ctrl.Send(playback.Pause{})
+		case playback.StatePaused:
+			g.ctrl.Send(playback.Resume{})
 		default:
-			// The window is closing; nobody will read this result.
+			g.errText = ""
+			g.ctrl.Send(playback.Play{})
 		}
-	}()
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyS) {
+		slog.Debug("ui key", "key", "s")
+		g.errText = ""
+		g.ctrl.Send(playback.Stop{})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyZ) {
+		slog.Debug("ui key", "key", "z")
+		g.errText = ""
+		g.ctrl.Send(playback.Prev{})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyB) {
+		slog.Debug("ui key", "key", "b")
+		g.errText = ""
+		g.ctrl.Send(playback.Next{})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
+		target := snap.Position - seekStep
+		if target < 0 {
+			target = 0
+		}
+		slog.Debug("ui key", "key", "left", "seek", target)
+		g.ctrl.Send(playback.Seek{Position: target})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyRight) {
+		target := snap.Position + seekStep
+		slog.Debug("ui key", "key", "right", "seek", target)
+		g.ctrl.Send(playback.Seek{Position: target})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyUp) {
+		g.ctrl.Send(playback.SetVolume{Volume: snap.Volume + volumeStep})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyDown) {
+		g.ctrl.Send(playback.SetVolume{Volume: snap.Volume - volumeStep})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+		next := (snap.Repeat + 1) % 3
+		g.ctrl.Send(playback.SetRepeat{Mode: next})
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyH) {
+		g.ctrl.Send(playback.SetShuffle{Enabled: !snap.Shuffle})
+	}
 }
 
 func (g *Game) drainEvents() {
+	if g.ctrl == nil {
+		return
+	}
+	events := g.ctrl.Events()
+	if events == nil {
+		return
+	}
 	for {
 		select {
-		case result := <-g.events:
-			slog.Debug("playback result drained", "err", result.err)
-			g.started = false
-			g.paused = false
-			if result.err != nil {
-				g.setError(result.err)
-			} else {
-				g.errText = ""
+		case ev := <-events:
+			switch e := ev.(type) {
+			case playback.PlaybackError:
+				g.setError(e.Message)
+			case playback.StateChanged:
+				if e.To == playback.StateResolving || e.To == playback.StatePlaying || e.To == playback.StateIdle {
+					g.errText = ""
+				}
 			}
 		default:
 			return
@@ -213,9 +269,9 @@ func (g *Game) drainEvents() {
 	}
 }
 
-func (g *Game) setError(err error) {
-	g.errText = err.Error()
-	slog.Error("playback failed", "err", err)
+func (g *Game) setError(msg string) {
+	g.errText = msg
+	slog.Error("playback failed", "err", msg)
 }
 
 func (g *Game) toggleDebug() {
@@ -228,6 +284,10 @@ func (g *Game) spriteName(name string) string {
 		if !ebiten.IsFocused() {
 			return skin.TitlebarIdle
 		}
+	case skin.PreviousButton:
+		if g.pointer.Active() == WidgetPrevious && g.pointer.Pressed() {
+			return skin.PreviousButtonActive
+		}
 	case skin.PlayButton:
 		if g.pointer.Active() == WidgetPlay && g.pointer.Pressed() {
 			return skin.PlayButtonActive
@@ -235,6 +295,14 @@ func (g *Game) spriteName(name string) string {
 	case skin.PauseButton:
 		if g.pointer.Active() == WidgetPause && g.pointer.Pressed() {
 			return skin.PauseButtonActive
+		}
+	case skin.StopButton:
+		if g.pointer.Active() == WidgetStop && g.pointer.Pressed() {
+			return skin.StopButtonActive
+		}
+	case skin.NextButton:
+		if g.pointer.Active() == WidgetNext && g.pointer.Pressed() {
+			return skin.NextButtonActive
 		}
 	}
 	return name
@@ -286,16 +354,18 @@ func (g *Game) drawDebug(screen *ebiten.Image) {
 		vector.StrokeRect(screen, float32(b.Min.X)+0.5, float32(b.Min.Y)+0.5, float32(b.Dx()), float32(b.Dy()), 1, magenta, false)
 	}
 
+	var snap playback.Snapshot
+	if g.ctrl != nil {
+		snap = g.ctrl.Snapshot()
+	}
+
 	// Keep the report to six short lines: the built-in debug font does not
 	// wrap, and the window is only 275 logical pixels wide.
 	var report strings.Builder
-	fmt.Fprintf(&report, "FPS %.0f TPS %.0f play=%v pause=%v\n", ebiten.ActualFPS(), ebiten.ActualTPS(), g.started, g.paused)
-	fmt.Fprintf(&report, "hot=%q active=%q cursor=%v\n", g.pointer.Hot(), g.pointer.Active(), g.pointer.Position())
-	for _, widget := range mainWidgets {
-		fmt.Fprintf(&report, "hit %s %v\n", widget.ID, widget.Bounds)
-	}
-	fmt.Fprintf(&report, "bg %v title %v\n", mainPlacements[0].At, mainPlacements[1].At)
-	fmt.Fprintf(&report, "play %v pause %v\n", mainPlacements[2].At, mainPlacements[3].At)
+	fmt.Fprintf(&report, "FPS %.0f TPS %.0f state=%s\n", ebiten.ActualFPS(), ebiten.ActualTPS(), snap.State)
+	fmt.Fprintf(&report, "q=%d/%d pos=%s/%s vol=%.0f%%\n", snap.Index+1, len(snap.Queue), snap.Position.Round(time.Second), snap.Duration.Round(time.Second), snap.Volume*100)
+	fmt.Fprintf(&report, "shuf=%v rep=%s id=%s\n", snap.Shuffle, snap.Repeat, snap.Track.ID)
+	fmt.Fprintf(&report, "hot=%q active=%q cur=%v\n", g.pointer.Hot(), g.pointer.Active(), g.pointer.Position())
 
 	lines := wrapText(report.String(), 43)
 	if len(lines) > 6 {

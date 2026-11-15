@@ -16,8 +16,14 @@ func TestLayoutIsFixedLogicalCanvas(t *testing.T) {
 
 func TestTransportWidgetsMatchButtonPlacements(t *testing.T) {
 	want := map[string]image.Rectangle{
-		WidgetPlay:  image.Rect(39, 88, 62, 106),
-		WidgetPause: image.Rect(62, 88, 85, 106),
+		WidgetPrevious: image.Rect(16, 88, 39, 106),
+		WidgetPlay:     image.Rect(39, 88, 62, 106),
+		WidgetPause:    image.Rect(62, 88, 85, 106),
+		WidgetStop:     image.Rect(85, 88, 108, 106),
+		WidgetNext:     image.Rect(108, 88, 131, 106),
+	}
+	if len(mainWidgets) != len(want) {
+		t.Fatalf("len(mainWidgets) = %d, want %d", len(mainWidgets), len(want))
 	}
 	for _, widget := range mainWidgets {
 		if got := widget.Bounds; got != want[widget.ID] {

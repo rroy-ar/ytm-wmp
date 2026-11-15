@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"ytm-wmp/internal/audio"
+	"ytm-wmp/internal/model"
 )
 
 const (
@@ -49,7 +49,7 @@ func (ExecRunner) Output(ctx context.Context, name string, args ...string) ([]by
 }
 
 type cachedStream struct {
-	info    audio.StreamInfo
+	info    model.StreamInfo
 	expires time.Time
 }
 
@@ -119,10 +119,10 @@ func New(opts ...Option) *Resolver {
 // target may be a YouTube video ID, a watch/short URL, or a yt-dlp search
 // query. Cache entries are keyed by video ID when one can be extracted, so a
 // bare ID and its watch URL share one entry.
-func (r *Resolver) Resolve(ctx context.Context, target string) (audio.StreamInfo, error) {
+func (r *Resolver) Resolve(ctx context.Context, target string) (model.StreamInfo, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
-		return audio.StreamInfo{}, errors.New("empty track target")
+		return model.StreamInfo{}, errors.New("empty track target")
 	}
 
 	key := cacheKey(target)
@@ -145,17 +145,17 @@ func (r *Resolver) Resolve(ctx context.Context, target string) (audio.StreamInfo
 	stdout, stderr, err := r.runner.Output(ctx, r.binary, args...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return audio.StreamInfo{}, ctxErr
+			return model.StreamInfo{}, ctxErr
 		}
-		return audio.StreamInfo{}, resolveError(target, err, stderr)
+		return model.StreamInfo{}, resolveError(target, err, stderr)
 	}
 
 	streamURL := firstNonEmptyLine(stdout)
 	if streamURL == "" {
-		return audio.StreamInfo{}, fmt.Errorf("%w for %q: yt-dlp returned no URL", ErrResolve, target)
+		return model.StreamInfo{}, fmt.Errorf("%w for %q: yt-dlp returned no URL", ErrResolve, target)
 	}
 
-	info := audio.StreamInfo{URL: streamURL}
+	info := model.StreamInfo{URL: streamURL}
 	if r.ttl > 0 {
 		info.ExpiresAt = r.now().Add(r.ttl)
 
@@ -191,6 +191,17 @@ func resolveTarget(target string) string {
 		return "https://www.youtube.com/watch?v=" + target
 	}
 	return target
+}
+
+// VideoID extracts a YouTube video ID from a bare ID or common YouTube URL
+// shapes. It returns "" for search queries and non-YouTube targets.
+func VideoID(target string) string {
+	return videoID(strings.TrimSpace(target))
+}
+
+// IsVideoID reports whether s matches the 11-character YouTube video ID shape.
+func IsVideoID(s string) bool {
+	return isVideoID(s)
 }
 
 // videoID extracts a YouTube video ID from the common URL shapes. It returns ""

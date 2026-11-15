@@ -1,0 +1,26 @@
+{
+  "id": "PL1234567890abcdef",
+  "title": "Discovery Mix",
+  "_type": "playlist",
+  "entries": [
+    {
+      "id": "FGBhQbmPwH8",
+      "title": "One More Time",
+      "channel": "Daft Punk",
+      "duration": 320,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=A2VpR8HahKc",
+      "title": "Aerodynamic",
+      "uploader": "Daft Punk",
+      "duration": 212
+    },
+    {
+      "id": "",
+      "title": "[Private video]"
+    }
+  ]
+}

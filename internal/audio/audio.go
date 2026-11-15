@@ -10,7 +10,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
+
+	"ytm-wmp/internal/model"
 )
 
 // Output format produced by ffmpeg. Ebitengine's NewPlayerF32 consumes raw
@@ -24,13 +25,7 @@ const (
 )
 
 // StreamInfo is a resolved, directly playable stream URL.
-//
-// ExpiresAt comes from our TTL policy, not from YouTube's signature: the URL
-// is reused until the cache entry is considered stale.
-type StreamInfo struct {
-	URL       string
-	ExpiresAt time.Time
-}
+type StreamInfo = model.StreamInfo
 
 // Resolver turns a catalog target (video ID, watch URL, or search query) into
 // a stream URL. It is implemented by internal/ytdlp.

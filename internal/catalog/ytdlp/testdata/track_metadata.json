@@ -1,0 +1,14 @@
+{
+  "id": "0wRYvsfhsR8",
+  "title": "Something About Us",
+  "track": "Something About Us (Album Version)",
+  "artist": "Daft Punk",
+  "album": "Discovery",
+  "channel": "Daft Punk",
+  "duration": 232,
+  "thumbnails": [
+    {"url": "https://i.ytimg.com/vi/0wRYvsfhsR8/default.jpg", "width": 120, "height": 90},
+    {"url": "https://i.ytimg.com/vi/0wRYvsfhsR8/mqdefault.jpg", "width": 320, "height": 180},
+    {"url": "https://i.ytimg.com/vi/0wRYvsfhsR8/maxresdefault.jpg", "width": 1280, "height": 720}
+  ]
+}

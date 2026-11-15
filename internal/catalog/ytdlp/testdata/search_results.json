@@ -1,0 +1,102 @@
+{
+  "id": "ytsearch10:daft punk",
+  "_type": "playlist",
+  "entries": [
+    {
+      "id": "FGBhQbmPwH8",
+      "url": "https://www.youtube.com/watch?v=FGBhQbmPwH8",
+      "title": "One More Time",
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "channel": "Daft Punk",
+      "duration": 320,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/default.jpg", "width": 120, "height": 90},
+        {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hqdefault.jpg", "width": 480, "height": 360},
+        {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hqdefault.webp", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "id": "A2VpR8HahKc",
+      "title": "Aerodynamic",
+      "channel": "Daft Punk",
+      "duration": 212,
+      "thumbnail": "https://i.ytimg.com/vi/A2VpR8HahKc/hqdefault.jpg"
+    },
+    {
+      "id": "L93-7vRfxNs",
+      "title": "Digital Love",
+      "uploader": "Daft Punk - Topic",
+      "duration": 301,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/L93-7vRfxNs/mqdefault.jpg", "width": 320, "height": 180}
+      ]
+    },
+    null,
+    {
+      "id": "",
+      "title": "[Deleted video]"
+    },
+    {
+      "id": "gN2hntZBIUQ",
+      "title": "Harder, Better, Faster, Stronger",
+      "creator": "Daft Punk",
+      "duration": 224.5
+    },
+    {
+      "id": "yca6UsllwYs",
+      "title": "Around the World",
+      "artist": "Daft Punk",
+      "duration": 429,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/yca6UsllwYs/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "id": "K0HSD_i2DvA",
+      "title": "Da Funk",
+      "channel": "Daft Punk",
+      "duration": 328,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/K0HSD_i2DvA/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "id": "s9MszVE7aR4",
+      "title": "Instant Crush",
+      "artist": "Daft Punk",
+      "album": "Random Access Memories",
+      "duration": 337,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/s9MszVE7aR4/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "id": "5NV6Rdv1a3I",
+      "title": "Get Lucky",
+      "artist": "Daft Punk",
+      "duration": 248,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/5NV6Rdv1a3I/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "id": "k55FYpQtXXA",
+      "title": "Veridis Quo",
+      "artist": "Daft Punk",
+      "duration": 345,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/k55FYpQtXXA/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    },
+    {
+      "id": "TCd6PfxOy0Y",
+      "title": "Voyager",
+      "artist": "Daft Punk",
+      "duration": 227,
+      "thumbnails": [
+        {"url": "https://i.ytimg.com/vi/TCd6PfxOy0Y/hqdefault.jpg", "width": 480, "height": 360}
+      ]
+    }
+  ]
+}

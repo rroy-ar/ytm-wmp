@@ -15,3 +15,12 @@ type Track struct {
 	Duration     time.Duration
 	ThumbnailURL string
 }
+
+// StreamInfo is a resolved, directly playable stream URL.
+//
+// ExpiresAt comes from our TTL policy, not from YouTube's signature: the URL
+// is reused until the cache entry is considered stale.
+type StreamInfo struct {
+	URL       string
+	ExpiresAt time.Time
+}

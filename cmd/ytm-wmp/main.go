@@ -1,8 +1,6 @@
 // Command ytm-wmp is a skinned YouTube Music player.
 //
-// Phase 1 is the walking skeleton: one hardcoded target, a real classic skin,
-// and play/pause through Ebitengine's audio context. This file is only flags,
-// dependency checks, wiring, and signal handling.
+// This file is only flags, dependency checks, wiring, and signal handling.
 package main
 
 import (
@@ -17,7 +15,10 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"ytm-wmp/internal/artwork"
 	"ytm-wmp/internal/audio"
+	"ytm-wmp/internal/catalog"
+	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
 	"ytm-wmp/internal/deps"
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
@@ -27,9 +28,8 @@ import (
 )
 
 const (
-	// defaultTarget keeps the PoC's one hardcoded track so a bare `go run`
-	// already demonstrates the full vertical slice. Phase 3 replaces it with
-	// search and a queue.
+	// defaultTarget keeps the PoC's one track when launched with no flags so a
+	// bare `go run ./cmd/ytm-wmp` still demonstrates playback immediately.
 	defaultTarget = "https://www.youtube.com/watch?v=0wRYvsfhsR8"
 	devSkinPath   = "assets/dev-skin"
 )
@@ -45,6 +45,8 @@ func run() error {
 	var urlFlags stringListFlag
 	flag.Var(&urlFlags, "url", "YouTube video ID, watch URL, or yt-dlp search query (repeatable)")
 	skinFlag := flag.String("skin", "", "skin directory, .wsz, or .zip (default: bundled dev skin)")
+	queryFlag := flag.String("query", "", "initial catalog search query")
+	playlistFlag := flag.String("playlist", "", "YouTube/YTM playlist URL or ID to load at startup")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
@@ -77,18 +79,35 @@ func run() error {
 	}
 
 	resolver := ytdlp.New(ytdlp.WithBinary(ytdlpTool.Path))
+	cat := catalogytdlp.New(catalogytdlp.WithBinary(ytdlpTool.Path))
+	artCache := artwork.NewCache(artwork.WithCacheDir(artworkCacheDir()))
 	sink := audio.NewEbitenSink()
 	ctrl := playback.NewController(resolver, audio.Opener{FFmpeg: ffmpegTool.Path}, sink)
-	game := ui.NewGame(ctx, s, ctrl, sink)
+
+	tracks, err := startupTracks(ctx, cat, urlFlags, flag.Args(), *playlistFlag, *queryFlag)
+	if err != nil {
+		return err
+	}
+
+	game := ui.NewGame(
+		ctx,
+		s,
+		ctrl,
+		sink,
+		ui.WithCatalog(cat),
+		ui.WithArtwork(artCache),
+		ui.WithInitialQuery(*queryFlag),
+	)
 	defer game.Close()
 
-	tracks := initialTracks(urlFlags, flag.Args())
 	trackIDs := make([]string, len(tracks))
 	for i, t := range tracks {
 		trackIDs[i] = t.ID
 	}
 	slog.Debug("initial queue", "count", len(tracks), "tracks", trackIDs)
-	ctrl.Send(playback.SetQueue{Tracks: tracks, Index: 0})
+	if len(tracks) > 0 {
+		ctrl.Send(playback.SetQueue{Tracks: tracks, Index: 0})
+	}
 
 	ebiten.SetWindowTitle("ytm-wmp")
 	ebiten.SetWindowSize(ui.WindowWidth, ui.WindowHeight)
@@ -97,6 +116,32 @@ func run() error {
 		return fmt.Errorf("run game: %w", err)
 	}
 	return nil
+}
+
+func startupTracks(ctx context.Context, cat catalog.Catalog, flagTargets, extra []string, playlistTarget, initialQuery string) ([]model.Track, error) {
+	explicit := explicitTracks(flagTargets, extra)
+	if playlistTarget != "" && cat != nil {
+		plTracks, err := cat.Playlist(ctx, playlistTarget)
+		if err != nil {
+			return nil, fmt.Errorf("loading playlist %q: %w", playlistTarget, err)
+		}
+		explicit = append(explicit, plTracks...)
+	}
+	if len(explicit) > 0 {
+		return explicit, nil
+	}
+	if initialQuery != "" {
+		return nil, nil
+	}
+	return []model.Track{{ID: defaultTarget}}, nil
+}
+
+func artworkCacheDir() string {
+	dir, err := os.UserCacheDir()
+	if err != nil || dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "ytm-wmp", "artwork")
 }
 
 func configureLogging(debug bool) {
@@ -139,7 +184,7 @@ func (f *stringListFlag) Set(value string) error {
 	return nil
 }
 
-func initialTracks(flagTargets, extra []string) []model.Track {
+func explicitTracks(flagTargets, extra []string) []model.Track {
 	var tracks []model.Track
 	for _, target := range flagTargets {
 		if target != "" {
@@ -151,6 +196,11 @@ func initialTracks(flagTargets, extra []string) []model.Track {
 			tracks = append(tracks, model.Track{ID: arg})
 		}
 	}
+	return tracks
+}
+
+func initialTracks(flagTargets, extra []string) []model.Track {
+	tracks := explicitTracks(flagTargets, extra)
 	if len(tracks) == 0 {
 		tracks = append(tracks, model.Track{ID: defaultTarget})
 	}

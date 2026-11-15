@@ -157,22 +157,24 @@ type SetQueue struct {
 	AutoPlay bool
 }
 type Enqueue struct{ Tracks []model.Track }
+type UpdateTrack struct{ Track model.Track }
 type SetShuffle struct{ Enabled bool }
 type SetRepeat struct{ Mode RepeatMode }
 
-func (Play) isCommand()       {}
-func (PlayIndex) isCommand()  {}
-func (Pause) isCommand()      {}
-func (Resume) isCommand()     {}
-func (Stop) isCommand()       {}
-func (Next) isCommand()       {}
-func (Prev) isCommand()       {}
-func (Seek) isCommand()       {}
-func (SetVolume) isCommand()  {}
-func (SetQueue) isCommand()   {}
-func (Enqueue) isCommand()    {}
-func (SetShuffle) isCommand() {}
-func (SetRepeat) isCommand()  {}
+func (Play) isCommand()        {}
+func (PlayIndex) isCommand()   {}
+func (Pause) isCommand()       {}
+func (Resume) isCommand()      {}
+func (Stop) isCommand()        {}
+func (Next) isCommand()        {}
+func (Prev) isCommand()        {}
+func (Seek) isCommand()        {}
+func (SetVolume) isCommand()   {}
+func (SetQueue) isCommand()    {}
+func (Enqueue) isCommand()     {}
+func (UpdateTrack) isCommand() {}
+func (SetShuffle) isCommand()  {}
+func (SetRepeat) isCommand()   {}
 
 // Event is a sealed output notification emitted by the playback actor.
 type Event interface {

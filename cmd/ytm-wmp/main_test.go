@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"os"
 	"testing"
+
+	"ytm-wmp/internal/model"
 )
 
 func TestChooseSkinPrefersExplicitPath(t *testing.T) {
@@ -45,5 +48,33 @@ func TestInitialTracks(t *testing.T) {
 	got = initialTracks([]string{"id1"}, []string{"", "id2"})
 	if len(got) != 2 || got[0].ID != "id1" || got[1].ID != "id2" {
 		t.Fatalf("initialTracks(flags, args) = %+v", got)
+	}
+}
+
+type fakeStartupCatalog struct {
+	playlist []model.Track
+}
+
+func (f fakeStartupCatalog) Search(context.Context, string, int) ([]model.Track, error) {
+	return nil, nil
+}
+func (f fakeStartupCatalog) Playlist(context.Context, string) ([]model.Track, error) {
+	return f.playlist, nil
+}
+func (f fakeStartupCatalog) Track(context.Context, string) (model.Track, error) {
+	return model.Track{}, nil
+}
+
+func TestStartupTracksWithQueryAndPlaylist(t *testing.T) {
+	cat := fakeStartupCatalog{playlist: []model.Track{{ID: "pl1"}, {ID: "pl2"}}}
+
+	got, err := startupTracks(context.Background(), cat, nil, nil, "PL123", "")
+	if err != nil || len(got) != 2 || got[0].ID != "pl1" {
+		t.Fatalf("startupTracks playlist = %+v, err=%v", got, err)
+	}
+
+	got, err = startupTracks(context.Background(), cat, nil, nil, "", "daft punk")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("startupTracks query = %+v, err=%v, want empty queue", got, err)
 	}
 }

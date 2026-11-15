@@ -18,7 +18,7 @@ const (
 
 // Resolver resolves a track target (video ID, URL, or query) to a stream URL.
 type Resolver interface {
-	Resolve(ctx context.Context, target string) (audio.StreamInfo, error)
+	Resolve(ctx context.Context, target string) (model.StreamInfo, error)
 	Forget(target string)
 }
 
@@ -258,6 +258,8 @@ func (a *actor) handleCommand(cmd Command) {
 		a.cmdSetQueue(c)
 	case Enqueue:
 		a.cmdEnqueue(c.Tracks)
+	case UpdateTrack:
+		a.cmdUpdateTrack(c.Track)
 	case SetShuffle:
 		a.q.SetShuffle(c.Enabled)
 		a.publish()
@@ -426,6 +428,19 @@ func (a *actor) cmdEnqueue(tracks []model.Track) {
 		}
 	}
 	a.publish()
+}
+
+func (a *actor) cmdUpdateTrack(meta model.Track) {
+	if !a.q.UpdateTrack(meta) {
+		return
+	}
+	a.publish()
+	if cur, ok := a.q.Current(); ok {
+		normMeta := normalizedTrackID(meta.ID)
+		if normMeta != "" && tracksMatchID(cur.ID, meta.ID, normMeta) {
+			a.emit(TrackChanged{Index: a.q.Index(), Track: cur})
+		}
+	}
 }
 
 func (a *actor) startTrack(track model.Track, offset time.Duration, targetState State) {

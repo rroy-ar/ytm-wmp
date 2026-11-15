@@ -428,6 +428,73 @@ func TestControllerVolumeAndNoGoroutineLeakAfterTwentyTrackChanges(t *testing.T)
 	t.Fatalf("goroutines after shutdown = %d, baseline = %d", runtime.NumGoroutine(), baseline)
 }
 
+func TestUpdateTrackEnrichesActiveAndQueuedTrackWithoutInterruptingPlayback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	ctrl := NewController(resolver, opener, sink)
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{
+		Tracks: []model.Track{
+			{ID: "https://www.youtube.com/watch?v=0wRYvsfhsR8"},
+			{ID: "FGBhQbmPwH8"},
+		},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitState(t, ctrl, StatePlaying)
+
+	// Drain initial events before UpdateTrack.
+	ev := waitEvent[TrackChanged](t, ctrl.Events())
+	if ev.Index != 0 {
+		t.Fatalf("initial TrackChanged index = %d, want 0", ev.Index)
+	}
+
+	sink.setPosition(12 * time.Second)
+	ctrl.Send(UpdateTrack{Track: model.Track{
+		ID:           "0wRYvsfhsR8",
+		Title:        "Something About Us",
+		Artist:       "Daft Punk",
+		Album:        "Discovery",
+		Duration:     232 * time.Second,
+		ThumbnailURL: "https://i.ytimg.com/vi/0wRYvsfhsR8/mqdefault.jpg",
+	}})
+
+	updated := waitEvent[TrackChanged](t, ctrl.Events())
+	if updated.Track.Title != "Something About Us" || updated.Track.Artist != "Daft Punk" {
+		t.Fatalf("updated TrackChanged = %+v", updated.Track)
+	}
+
+	snap := ctrl.Snapshot()
+	if snap.State != StatePlaying {
+		t.Fatalf("state after UpdateTrack = %s, want playing (must not restart)", snap.State)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("opener calls = %d, want 1", opener.callCount())
+	}
+	if snap.Position != 12*time.Second || snap.Duration != 232*time.Second {
+		t.Fatalf("pos=%v dur=%v, want 12s / 232s", snap.Position, snap.Duration)
+	}
+
+	// Update queued (non-active) track too; should update Queue without emitting TrackChanged.
+	ctrl.Send(UpdateTrack{Track: model.Track{
+		ID:     "FGBhQbmPwH8",
+		Title:  "One More Time",
+		Artist: "Daft Punk",
+	}})
+	waitCondition(t, func() bool {
+		q := ctrl.Snapshot().Queue
+		return len(q) == 2 && q[1].Title == "One More Time"
+	})
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
 // TestLivePlaybackIntegration exercises real yt-dlp + ffmpeg when explicitly
 // enabled via YTM_WMP_LIVE_TEST=1.
 func TestLivePlaybackIntegration(t *testing.T) {

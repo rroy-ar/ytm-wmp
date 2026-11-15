@@ -2,8 +2,10 @@ package playback
 
 import (
 	"math/rand/v2"
+	"strings"
 
 	"ytm-wmp/internal/model"
+	"ytm-wmp/internal/ytdlp"
 )
 
 const maxHistory = 256
@@ -229,6 +231,69 @@ func (q *queue) Len() int      { return len(q.tracks) }
 func (q *queue) Shuffle() bool { return q.shuffle }
 func (q *queue) Repeat() RepeatMode {
 	return q.repeat
+}
+
+// UpdateTrack enriches matching tracks in the queue with non-empty metadata
+// fields from meta and reports whether any track changed.
+func (q *queue) UpdateTrack(meta model.Track) bool {
+	normMeta := normalizedTrackID(meta.ID)
+	if normMeta == "" {
+		return false
+	}
+	changed := false
+	for i := range q.tracks {
+		if !tracksMatchID(q.tracks[i].ID, meta.ID, normMeta) {
+			continue
+		}
+		if mergeTrackMetadata(&q.tracks[i], meta) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+func normalizedTrackID(id string) string {
+	trimmed := strings.TrimSpace(id)
+	if trimmed == "" {
+		return ""
+	}
+	if vid := ytdlp.VideoID(trimmed); vid != "" {
+		return vid
+	}
+	return trimmed
+}
+
+func tracksMatchID(existingID, rawMetaID, normMetaID string) bool {
+	if existingID == rawMetaID || strings.TrimSpace(existingID) == normMetaID {
+		return true
+	}
+	vid := ytdlp.VideoID(existingID)
+	return vid != "" && vid == normMetaID
+}
+
+func mergeTrackMetadata(dst *model.Track, src model.Track) bool {
+	changed := false
+	if src.Title != "" && dst.Title != src.Title {
+		dst.Title = src.Title
+		changed = true
+	}
+	if src.Artist != "" && dst.Artist != src.Artist {
+		dst.Artist = src.Artist
+		changed = true
+	}
+	if src.Album != "" && dst.Album != src.Album {
+		dst.Album = src.Album
+		changed = true
+	}
+	if src.Duration > 0 && dst.Duration != src.Duration {
+		dst.Duration = src.Duration
+		changed = true
+	}
+	if src.ThumbnailURL != "" && dst.ThumbnailURL != src.ThumbnailURL {
+		dst.ThumbnailURL = src.ThumbnailURL
+		changed = true
+	}
+	return changed
 }
 
 func (q *queue) pushHistory(idx int) {

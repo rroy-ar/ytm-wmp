@@ -15,6 +15,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"ytm-wmp/internal/artwork"
+	"ytm-wmp/internal/catalog"
+	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
 	"ytm-wmp/internal/ui/skinview"
@@ -40,8 +43,40 @@ type AudioLifecycle interface {
 	Close()
 }
 
-// Game is the Ebitengine application: a fixed 275x116 logical canvas, a skinned
-// main window, and transport controls wired to the playback actor.
+// ArtworkSource fetches and caches resized track thumbnails off the UI thread.
+type ArtworkSource interface {
+	Get(ctx context.Context, videoID, thumbnailURL string) (artwork.Bundle, error)
+	LookupMemory(videoID string) (artwork.Bundle, bool)
+}
+
+// GameOption customizes Game wiring for catalog search and artwork.
+type GameOption func(*Game)
+
+// WithCatalog enables catalog search, playlist import, and track metadata enrichment.
+func WithCatalog(cat catalog.Catalog) GameOption {
+	return func(g *Game) { g.cat = cat }
+}
+
+// WithArtwork enables asynchronous thumbnail fetching and display.
+func WithArtwork(art ArtworkSource) GameOption {
+	return func(g *Game) { g.art = art }
+}
+
+// WithInitialQuery seeds the browser search box and runs an initial lookup.
+func WithInitialQuery(q string) GameOption {
+	return func(g *Game) { g.searchQuery = strings.TrimSpace(q) }
+}
+
+// WithSearchDebounce overrides the typing debounce window used by the catalog searcher.
+func WithSearchDebounce(d time.Duration) GameOption {
+	return func(g *Game) {
+		g.searchDebounce = d
+		g.hasSearchDebounce = true
+	}
+}
+
+// Game is the Ebitengine application: a skinned main window plus the catalog
+// browser panel wired to the playback actor.
 type Game struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -49,6 +84,8 @@ type Game struct {
 	skin *skin.Skin
 	ctrl PlaybackController
 	sink AudioLifecycle
+	cat  catalog.Catalog
+	art  ArtworkSource
 
 	view      *skinview.View
 	pointer   Pointer
@@ -57,13 +94,35 @@ type Game struct {
 
 	errText string
 
+	searcher          *catalog.Searcher
+	searchDebounce    time.Duration
+	hasSearchDebounce bool
+	searchQuery       string
+	searchFocused     bool
+	searchStatus      string
+	results           []model.Track
+	selectedResult    int
+	scrollOffset      int
+	showArtModal      bool
+
+	artPlaceholder *ebiten.Image
+	artResults     chan artFetchResult
+	enrichResults  chan model.Track
+	artTex         map[string]artTextures
+	artOrder       []string
+	artPending     map[string]bool
+	artFailed      map[string]string
+	knownThumbURL  map[string]string
+	enriched       map[string]bool
+
 	wg        sync.WaitGroup
 	closeOnce sync.Once
 }
 
-// NewGame wires the UI to a loaded skin, playback controller, and audio sink.
-// It starts the playback actor under a derived context canceled by Close.
-func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink AudioLifecycle) *Game {
+// NewGame wires the UI to a loaded skin, playback controller, audio sink, and
+// optional catalog/artwork services. It starts the playback actor under a
+// derived context canceled by Close.
+func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink AudioLifecycle, opts ...GameOption) *Game {
 	ctx, cancel := context.WithCancel(parent)
 	g := &Game{
 		ctx:    ctx,
@@ -72,6 +131,13 @@ func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink
 		ctrl:   ctrl,
 		sink:   sink,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(g)
+		}
+	}
+	g.initBrowser()
+
 	if ctrl != nil {
 		g.wg.Add(1)
 		go func() {
@@ -82,7 +148,7 @@ func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink
 	return g
 }
 
-// Update advances input, drains playback events, and enforces the fixed
+// Update advances input, drains playback/catalog events, and enforces the fixed
 // timestep. It returns ebiten.Termination when the parent context is canceled.
 func (g *Game) Update() error {
 	if g.ctx.Err() != nil {
@@ -104,9 +170,22 @@ func (g *Game) Update() error {
 	}
 
 	g.drainEvents()
+	g.updateBrowser()
 
 	cursorX, cursorY := ebiten.CursorPosition()
-	clicked := g.pointer.Update(cursorX, cursorY, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), mainWidgets)
+	mousePressed := ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	wasMousePressed := g.pointer.Pressed()
+	if mousePressed && !wasMousePressed {
+		pt := image.Pt(cursorX, cursorY)
+		if g.searchFocused && !pt.In(image.Rect(6, 160, 198, 178)) && !pt.In(image.Rect(136, 89, 158, 105)) {
+			g.searchFocused = false
+		}
+		if g.showArtModal && !pt.In(image.Rect(6, 130, 32, 156)) {
+			g.showArtModal = false
+		}
+	}
+
+	clicked := g.pointer.Update(cursorX, cursorY, mousePressed, allWidgets)
 	if clicked != "" {
 		g.onClick(clicked)
 	}
@@ -118,19 +197,20 @@ func (g *Game) Update() error {
 	return nil
 }
 
-// Draw renders the main window. It never does I/O, resolves URLs, or allocates
-// textures; those happen in Update or inside skinview.New.
+// Draw renders the main window and catalog browser. It never does I/O, resolves
+// URLs, or allocates textures; those happen off-thread or inside Update.
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{R: 0x0c, G: 0x0f, B: 0x14, A: 0xff})
 	if g.view == nil {
 		ebitenutil.DebugPrintAt(screen, "skin view not ready", 8, 8)
-		return
+	} else {
+		for _, p := range mainPlacements {
+			name := g.spriteName(p.Sprite)
+			g.drawSprite(screen, name, p.At)
+		}
 	}
 
-	for _, p := range mainPlacements {
-		name := g.spriteName(p.Sprite)
-		g.drawSprite(screen, name, p.At)
-	}
+	g.drawBrowser(screen)
 
 	if g.errText != "" {
 		g.drawError(screen)
@@ -146,10 +226,13 @@ func (g *Game) Layout(_, _ int) (int, int) {
 	return WindowWidth, WindowHeight
 }
 
-// Close cancels the playback actor, waits for it to stop all workers and
-// ffmpeg processes, then releases the audio device.
+// Close cancels the playback actor, searcher, and background workers, waits for
+// them to stop, then releases the audio device.
 func (g *Game) Close() {
 	g.closeOnce.Do(func() {
+		if g.searcher != nil {
+			g.searcher.Close()
+		}
 		if g.cancel != nil {
 			g.cancel()
 		}
@@ -161,6 +244,9 @@ func (g *Game) Close() {
 }
 
 func (g *Game) onClick(id string) {
+	if g.onBrowserClick(id) {
+		return
+	}
 	if g.ctrl == nil {
 		return
 	}
@@ -184,6 +270,18 @@ func (g *Game) onClick(id string) {
 }
 
 func (g *Game) handleKeys() {
+	if !g.searchFocused && inpututil.IsKeyJustPressed(ebiten.KeySlash) {
+		g.focusSearch()
+		return
+	}
+	if g.searchFocused {
+		g.handleSearchKeys()
+		return
+	}
+	if g.showArtModal && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.showArtModal = false
+		return
+	}
 	if g.ctrl == nil {
 		return
 	}
@@ -262,6 +360,9 @@ func (g *Game) drainEvents() {
 				if e.To == playback.StateResolving || e.To == playback.StatePlaying || e.To == playback.StateIdle {
 					g.errText = ""
 				}
+			case playback.TrackChanged:
+				g.maybeEnrichTrack(e.Track)
+				g.requestArtwork(e.Track)
 			}
 		default:
 			return
@@ -303,6 +404,10 @@ func (g *Game) spriteName(name string) string {
 	case skin.NextButton:
 		if g.pointer.Active() == WidgetNext && g.pointer.Pressed() {
 			return skin.NextButtonActive
+		}
+	case skin.EjectButton:
+		if g.pointer.Active() == WidgetEject && g.pointer.Pressed() {
+			return skin.EjectButtonActive
 		}
 	}
 	return name
@@ -349,7 +454,7 @@ func (g *Game) drawDebug(screen *ebiten.Image) {
 		width, height := def.Src.Dx(), def.Src.Dy()
 		vector.StrokeRect(screen, float32(p.At.X)+0.5, float32(p.At.Y)+0.5, float32(width), float32(height), 1, cyan, false)
 	}
-	for _, widget := range mainWidgets {
+	for _, widget := range allWidgets {
 		b := widget.Bounds
 		vector.StrokeRect(screen, float32(b.Min.X)+0.5, float32(b.Min.Y)+0.5, float32(b.Dx()), float32(b.Dy()), 1, magenta, false)
 	}

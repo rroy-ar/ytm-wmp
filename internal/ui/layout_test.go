@@ -21,6 +21,7 @@ func TestTransportWidgetsMatchButtonPlacements(t *testing.T) {
 		WidgetPause:    image.Rect(62, 88, 85, 106),
 		WidgetStop:     image.Rect(85, 88, 108, 106),
 		WidgetNext:     image.Rect(108, 88, 131, 106),
+		WidgetEject:    image.Rect(136, 89, 158, 105),
 	}
 	if len(mainWidgets) != len(want) {
 		t.Fatalf("len(mainWidgets) = %d, want %d", len(mainWidgets), len(want))
@@ -42,17 +43,30 @@ func TestAllPlacementsReferenceKnownSprites(t *testing.T) {
 		if def.Src.Dx() <= 0 || def.Src.Dy() <= 0 {
 			t.Errorf("placement %q has empty source rect %v", p.Sprite, def.Src)
 		}
-		if p.At.X < 0 || p.At.Y < 0 || p.At.X+def.Src.Dx() > WindowWidth || p.At.Y+def.Src.Dy() > WindowHeight {
-			t.Errorf("placement %q at %v with size %v is outside the %dx%d window",
-				p.Sprite, p.At, def.Src.Size(), WindowWidth, WindowHeight)
+		if p.At.X < 0 || p.At.Y < 0 || p.At.X+def.Src.Dx() > MainWindowWidth || p.At.Y+def.Src.Dy() > MainWindowHeight {
+			t.Errorf("placement %q at %v with size %v is outside the %dx%d main window",
+				p.Sprite, p.At, def.Src.Size(), MainWindowWidth, MainWindowHeight)
 		}
 	}
 }
 
-func TestWidgetsStayInsideWindow(t *testing.T) {
+func TestWidgetsStayInsideWindowAndDoNotOverlap(t *testing.T) {
+	mainArea := image.Rect(0, 0, MainWindowWidth, MainWindowHeight)
 	for _, widget := range mainWidgets {
-		if !widget.Bounds.In(image.Rect(0, 0, WindowWidth, WindowHeight)) {
-			t.Errorf("widget %q bounds %v are outside the window", widget.ID, widget.Bounds)
+		if !widget.Bounds.In(mainArea) {
+			t.Errorf("main widget %q bounds %v are outside main window", widget.ID, widget.Bounds)
+		}
+	}
+
+	browserArea := image.Rect(0, MainWindowHeight, WindowWidth, WindowHeight)
+	for i, widget := range browserWidgets {
+		if !widget.Bounds.In(browserArea) {
+			t.Errorf("browser widget %q bounds %v are outside browser panel %v", widget.ID, widget.Bounds, browserArea)
+		}
+		for j := i + 1; j < len(browserWidgets); j++ {
+			if widget.Bounds.Overlaps(browserWidgets[j].Bounds) {
+				t.Errorf("browser widgets %q and %q overlap", widget.ID, browserWidgets[j].ID)
+			}
 		}
 	}
 }

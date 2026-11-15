@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"sync"
+	"time"
 
 	ebitenaudio "github.com/hajimehoshi/ebiten/v2/audio"
 )
@@ -18,6 +20,9 @@ type pcmPlayer interface {
 	Play()
 	Pause()
 	PauseAndStopReading()
+	Position() time.Duration
+	SetVolume(float64)
+	Volume() float64
 }
 
 type playerFactory func(io.Reader) (pcmPlayer, error)
@@ -37,6 +42,9 @@ type EbitenSink struct {
 	player       pcmPlayer
 	src          Source
 	pausePending bool
+	volumeSet    bool
+	volume       float64
+	lastPos      time.Duration
 
 	teardownMu sync.Mutex
 }
@@ -45,12 +53,12 @@ type EbitenSink struct {
 // Ebitengine game has started; it creates the process-wide 48 kHz context on
 // the first Update tick.
 func NewEbitenSink() *EbitenSink {
-	return &EbitenSink{}
+	return &EbitenSink{volumeSet: true, volume: 1}
 }
 
 // newEbitenSink injects a player factory for tests.
 func newEbitenSink(factory playerFactory) *EbitenSink {
-	s := &EbitenSink{factory: factory}
+	s := &EbitenSink{factory: factory, volumeSet: true, volume: 1}
 	if factory != nil {
 		// Mark initialization done so tests that call Play directly do not
 		// create a real audio device.
@@ -117,6 +125,12 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	s.mu.Lock()
 	s.player = player
 	s.src = src
+	s.lastPos = 0
+	vol := 1.0
+	if s.volumeSet {
+		vol = s.volume
+	}
+	player.SetVolume(vol)
 	paused := startPaused || s.pausePending
 	s.pausePending = false
 	if paused {
@@ -138,12 +152,52 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	}
 }
 
-// Begin clears pause intent left over from a previous session. The UI calls it
-// once per new play attempt, before resolution starts.
+// Begin clears pause intent and cached position left over from a previous
+// session. The playback layer calls it once per new play attempt.
 func (s *EbitenSink) Begin() {
 	s.mu.Lock()
 	s.pausePending = false
+	s.lastPos = 0
 	s.mu.Unlock()
+}
+
+// SetVolume clamps volume to [0, 1] and applies it to the active player as well
+// as future players created by Play.
+func (s *EbitenSink) SetVolume(volume float64) {
+	volume = clampVolume(volume)
+	s.mu.Lock()
+	s.volumeSet = true
+	s.volume = volume
+	player := s.player
+	s.mu.Unlock()
+
+	if player != nil {
+		player.SetVolume(volume)
+	}
+}
+
+// Volume returns the configured output volume in [0, 1].
+func (s *EbitenSink) Volume() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.volumeSet {
+		return 1
+	}
+	return s.volume
+}
+
+// Position returns the playback position of the active stream (or the final
+// position captured before teardown until the next Begin).
+func (s *EbitenSink) Position() time.Duration {
+	s.mu.Lock()
+	player := s.player
+	lastPos := s.lastPos
+	s.mu.Unlock()
+
+	if player != nil {
+		return player.Position()
+	}
+	return lastPos
 }
 
 // Pause stops the clock but keeps ffmpeg and the buffered pipe alive. If the
@@ -187,6 +241,7 @@ func (s *EbitenSink) teardown(player pcmPlayer, src Source) {
 	s.teardownMu.Lock()
 	defer s.teardownMu.Unlock()
 
+	pos := player.Position()
 	if src != nil {
 		_ = src.Close()
 	}
@@ -194,9 +249,20 @@ func (s *EbitenSink) teardown(player pcmPlayer, src Source) {
 
 	s.mu.Lock()
 	if s.player == player {
+		s.lastPos = pos
 		s.player = nil
 		s.src = nil
 		s.pausePending = false
 	}
 	s.mu.Unlock()
+}
+
+func clampVolume(v float64) float64 {
+	if math.IsNaN(v) || v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }

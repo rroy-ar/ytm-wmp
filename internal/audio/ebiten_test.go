@@ -201,6 +201,59 @@ func TestEbitenSinkRejectsUninitializedFactory(t *testing.T) {
 	}
 }
 
+func TestEbitenSinkVolumeAndPosition(t *testing.T) {
+	player := newFakePlayer(&recorder{})
+	player.position = 12 * time.Second
+	src := newSinkSource()
+	sink := newEbitenSink(factoryFor(player))
+
+	if got := sink.Volume(); got != 1 {
+		t.Fatalf("default Volume = %v, want 1", got)
+	}
+	sink.SetVolume(0.4)
+	if got := sink.Volume(); got != 0.4 {
+		t.Fatalf("Volume = %v, want 0.4", got)
+	}
+	sink.SetVolume(2.5)
+	if got := sink.Volume(); got != 1 {
+		t.Fatalf("clamped high Volume = %v, want 1", got)
+	}
+	sink.SetVolume(-0.5)
+	if got := sink.Volume(); got != 0 {
+		t.Fatalf("clamped low Volume = %v, want 0", got)
+	}
+	sink.SetVolume(0.75)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- sink.Play(context.Background(), src) }()
+	waitPlayerStart(t, player)
+
+	if got := player.Volume(); got != 0.75 {
+		t.Fatalf("player.Volume() = %v, want 0.75 applied on start", got)
+	}
+	if got := sink.Position(); got != 12*time.Second {
+		t.Fatalf("sink.Position() = %v, want 12s", got)
+	}
+
+	sink.SetVolume(0.5)
+	if got := player.Volume(); got != 0.5 {
+		t.Fatalf("player.Volume() after update = %v, want 0.5", got)
+	}
+
+	src.finish()
+	if err := waitPlayback(t, errCh); err != nil {
+		t.Fatalf("Play = %v, want nil", err)
+	}
+	// Position stays preserved until Begin() is called for the next stream.
+	if got := sink.Position(); got != 12*time.Second {
+		t.Fatalf("sink.Position() after EOF = %v, want 12s", got)
+	}
+	sink.Begin()
+	if got := sink.Position(); got != 0 {
+		t.Fatalf("sink.Position() after Begin = %v, want 0", got)
+	}
+}
+
 type recorder struct {
 	mu     sync.Mutex
 	events []string
@@ -235,6 +288,8 @@ type fakePlayer struct {
 	pauses        int
 	stops         int
 	playing       bool
+	volume        float64
+	position      time.Duration
 	startedSignal chan struct{}
 	startOnce     sync.Once
 }
@@ -242,6 +297,7 @@ type fakePlayer struct {
 func newFakePlayer(recorder *recorder) *fakePlayer {
 	return &fakePlayer{
 		recorder:      recorder,
+		volume:        1,
 		startedSignal: make(chan struct{}),
 	}
 }
@@ -277,7 +333,23 @@ func (p *fakePlayer) IsPlaying() bool {
 	return p.playing
 }
 
-func (p *fakePlayer) Position() time.Duration { return 0 }
+func (p *fakePlayer) Position() time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.position
+}
+
+func (p *fakePlayer) SetVolume(v float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.volume = v
+}
+
+func (p *fakePlayer) Volume() float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.volume
+}
 
 func (p *fakePlayer) playCount() int {
 	p.mu.Lock()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -73,6 +74,7 @@ func (o Opener) Open(ctx context.Context, streamURL string, offset time.Duration
 		stdout:    stdout,
 		stderr:    stderr,
 		streamURL: streamURL,
+		openedAt:  time.Now(),
 		done:      make(chan struct{}),
 	}, nil
 }
@@ -122,10 +124,12 @@ type ffmpegSource struct {
 	stdout    io.ReadCloser
 	stderr    *ringBuffer
 	streamURL string
+	openedAt  time.Time
 	done      chan struct{}
 
-	bytesRead atomic.Int64
-	eof       atomic.Bool
+	bytesRead    atomic.Int64
+	eof          atomic.Bool
+	firstPCMOnce sync.Once
 
 	errMu   sync.Mutex
 	readErr error
@@ -139,6 +143,9 @@ func (s *ffmpegSource) Read(p []byte) (int, error) {
 	n, err := s.stdout.Read(p)
 	if n > 0 {
 		s.bytesRead.Add(int64(n))
+		s.firstPCMOnce.Do(func() {
+			slog.Debug("ffmpeg first pcm", "first_pcm_ms", time.Since(s.openedAt).Milliseconds())
+		})
 	}
 	if err != nil {
 		if errors.Is(err, io.EOF) {

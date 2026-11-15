@@ -1,8 +1,8 @@
 # Plan: from the PoC to a full YouTube Music player with classic `.wsz` skins
 
-Status: active execution plan. Phases 0, 1, and 2 are complete; Phase 3
-(catalog: search, metadata, artwork) is next. This document is the single
-source of truth; the root `PLAN.md` is historical brainstorming.
+Status: active execution plan. Phases 0, 1, 2, and 3A are complete; Phase 4
+(complete classic skin system) is next. This document is the single source of
+truth; the root `PLAN.md` is historical brainstorming.
 
 Last updated: 2026-11-15.
 
@@ -13,9 +13,19 @@ path still works, but the UI, skin loader, and audio backend are now in place.
 
 Implemented and covered by tests:
 
-- `cmd/ytm-wmp` is wiring only: `-url`, `-skin`, `-debug`, dependency checks,
-  signal handling, skin loading, and `ebiten.RunGame`.
-- Ebitengine v2.10.5 opens a fixed 275x116 logical window.
+- `cmd/ytm-wmp` is wiring only: `-url`, `-skin`, `-query`, `-playlist`, `-debug`,
+  dependency checks, signal handling, skin loading, catalog/artwork wiring, and
+  `ebiten.RunGame`.
+- `cmd/ytmctl` provides a debug CLI for `search`, `track`, `playlist`, and
+  `artwork`.
+- Ebitengine v2.10.5 opens a 275x348 logical canvas (275x116 skinned main window
+  plus 275x232 catalog browser panel).
+- `internal/catalog` defines the `Catalog` interface, `IsPlaylistTarget`, and a
+  debounced, generation-tagged async `Searcher`; `internal/catalog/ytdlp`
+  implements `yt-dlp -J` search, track metadata, and playlist extraction with
+  stdout caps and search/track caches.
+- `internal/artwork` fetches, decodes (JPEG/PNG/WebP), resizes (64x64 list and
+  300x300 now-playing), and caches thumbnails on disk and in an in-memory LRU.
 - `internal/skin` loads `.wsz`, `.zip`, or a directory of loose BMPs. It
   normalizes case, backslashes, and nested paths, rejects modern `skin.xml`
   skins, caps per-asset/total bytes, total pixels, and ZIP entries, and handles
@@ -46,10 +56,11 @@ Implemented and covered by tests:
 
 What is still missing:
 
-- Search, playlist import, metadata, artwork, and persistence.
+- Persistence (config, queue, layout) and M3U import/export.
 - Skinned playlist/EQ windows, bitmap text, volume/balance/seek bars, shuffle
   and repeat buttons, and the complete Webamp sprite table.
-- Live catalog tests, skin fuzzing, a skin corpus, and cross-platform CI.
+- Optional InnerTube `WEB_REMIX` backend (Phase 3B), skin fuzzing, a skin
+  corpus, and cross-platform CI.
 
 Keep the good parts: process cancellation, the stale-URL retry, the PCM pipe,
 and the short time-to-first-audio. Do not rewrite them into a framework.
@@ -112,20 +123,20 @@ single-track coordinator, not an actor.
 
 ```text
 cmd/ytm-wmp/main.go          flags, dependency checks, skin load, wiring, RunGame
-cmd/ytmctl/main.go           planned Phase 3 debug CLI
-internal/ui/                 Ebitengine Game, input, layout, debug overlay
+cmd/ytmctl/main.go           Phase 3 debug CLI (search, track, playlist, artwork)
+internal/ui/                 Ebitengine Game, input, layout, browser, debug overlay
 internal/ui/skinview/        one-time sheet upload + SubImage cache
 internal/ui/screens/         planned: main, playlist, equalizer, browser, settings
 internal/skin/               pure .wsz/.zip loader (Phase 1 subset)
-internal/playback/           current single-track Player; Phase 2 actor/queue
+internal/playback/           actor controller, queue, state machine, error taxonomy
 internal/audio/              ffmpeg f32le Source + Ebitengine sink
-internal/ytdlp/              yt-dlp resolver and URL cache
-internal/model/              Track domain type
+internal/ytdlp/              yt-dlp resolver, VideoID helper, and URL cache
+internal/model/              Track and StreamInfo domain types
 internal/deps/               yt-dlp/ffmpeg discovery and version checks
-internal/catalog/            planned Phase 3 Catalog interface
-internal/catalog/ytdlp/      planned Phase 3A implementation
+internal/catalog/            Catalog interface, IsPlaylistTarget, debounced Searcher
+internal/catalog/ytdlp/      Phase 3A yt-dlp -J catalog implementation
 internal/catalog/ytmusic/    optional InnerTube implementation (Phase 3B)
-internal/artwork/            planned thumbnail fetch/decode/resize/cache
+internal/artwork/            thumbnail fetch/decode/resize/disk+LRU cache/placeholder
 internal/store/              planned config, queue, M3U, atomic writes
 internal/testutil/           planned fake runner/source/skin helpers
 assets/dev-skin/             original loose BMPs; no copyrighted skins
@@ -149,9 +160,9 @@ catalog must not import ui or playback (planned)
 playback must not import ui
 ```
 
-One known seam: `internal/ytdlp` currently returns `audio.StreamInfo`, so it
-imports `internal/audio`. Phase 3 should either move `StreamInfo` to
-`internal/model` or define a consumer-owned resolver type in `playback`.
+The `StreamInfo` seam has been resolved: `StreamInfo` lives in `internal/model`
+(with `audio.StreamInfo` as a type alias), so `internal/ytdlp` does not import
+`internal/audio`. `catalog` stays independent of `ui` and `playback`.
 
 `skin` works with `image.Image`, `image.Rectangle`, strings, and structs. That is
 what makes it unit-testable and fuzzable without a graphics context.
@@ -612,15 +623,15 @@ type Config struct {
 
 Sizes are relative: S = a few sessions, M = about a week of evenings, L =
 multiple weeks. The critical path is 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 7.
-Phases 0 and 1 are complete; Phase 2 is next.
+Phases 0, 1, 2, and 3A are complete; Phase 4 is next.
 
 | Phase | Outcome | Size | Status |
 |-------|---------|------|--------|
 | 0 | Clean seams, tests, CLI still works | S | done |
 | 1 | Ebitengine window with a skinned main window and audio | M | done |
 | 2 | Playback core: queue, seek, recovery | L | done |
-| 3 | Catalog: search, metadata, artwork | M-L | next |
-| 4 | Complete classic skin system | L | planned |
+| 3 | Catalog: search, metadata, artwork | M-L | done (3A; 3B optional) |
+| 4 | Complete classic skin system | L | next |
 | 5 | Full player UX and persistence | L | planned |
 | 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | optional |
 | 7 | Hardening and v0.1 release | M | planned |
@@ -737,20 +748,31 @@ main transport buttons and keyboard shortcuts.
 - Unit tests with fakes (`go test -race ./...`), goroutine-leak verification
   across 20 track changes, and opt-in `YTM_WMP_LIVE_TEST=1` integration test.
 
-### Phase 3 — Catalog: search, metadata, artwork (next)
+### Phase 3 — Catalog: search, metadata, artwork (done — 3A)
 
 **Goal:** stop hardcoding tracks.
 
-**Work (3A, yt-dlp)**
+**Outcome:** completed Phase 3A. Moved `StreamInfo` into `internal/model` and
+exported `ytdlp.VideoID`, added `internal/catalog` (`Catalog` interface,
+`IsPlaylistTarget`, debounced/generation-tagged `Searcher`), implemented
+`internal/catalog/ytdlp` (`yt-dlp -J` search, track metadata, and playlist
+extraction with stdout cap, caches, and JSON fixtures), added `internal/artwork`
+(HTTP fetch, JPEG/PNG/WebP decode, 64x64 & 300x300 resize, atomic disk cache,
+in-memory LRU, placeholder), added `cmd/ytmctl`, added `playback.UpdateTrack`
+for non-interrupting metadata enrichment, and integrated the catalog browser
+panel, search box, artwork display, and `-query`/`-playlist` flags into
+`internal/ui` and `cmd/ytm-wmp`.
+
+**Work (3A, yt-dlp — done)**
 
 - `Catalog` interface and yt-dlp implementation.
 - Search, track metadata, playlist extraction; JSON fixtures.
 - Search debounce/cancel/generation; result cache.
 - Artwork fetch/decode/resize/disk cache/placeholder.
-- Browser window: search field, results list, play/queue actions.
-- Optional `cmd/ytmctl` for debugging catalog before the UI is complete.
+- Browser window: search field, results list, play/queue actions, metadata enrichment.
+- `cmd/ytmctl` debug CLI (`search`, `track`, `playlist`, `artwork`).
 
-**Work (3B, optional)**
+**Work (3B, optional — deferred)**
 
 - InnerTube `WEB_REMIX` search/browse behind the same interface; yt-dlp remains
   the stream resolver. Do this only if YTM-specific results are required.

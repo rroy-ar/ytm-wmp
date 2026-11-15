@@ -35,23 +35,33 @@ and the proof-of-concept track. Use the mouse to click play, pause, and resume.
 Close the window (or press Ctrl+C in the terminal) to stop; shutdown kills
 ffmpeg and releases the audio device.
 
-Flags:
+Flags and arguments:
 
 ```sh
-go run ./cmd/ytm-wmp -url 'https://www.youtube.com/watch?v=...'
+go run ./cmd/ytm-wmp -url 'https://www.youtube.com/watch?v=...' -url 'https://www.youtube.com/watch?v=...'
+go run ./cmd/ytm-wmp <track1> <track2>
 go run ./cmd/ytm-wmp -skin /path/to/skin.wsz
 go run ./cmd/ytm-wmp -skin ./some/loose-bmp-directory
 go run ./cmd/ytm-wmp -debug
 ```
 
-`-url` accepts a YouTube video ID, a watch/short URL, or a yt-dlp search query.
-`-skin` accepts a `.wsz`, `.zip`, or a directory of loose BMPs. A file is opened
-as a ZIP regardless of its extension; modern `.wal` skins (`skin.xml`) are
-rejected with a clear message.
+`-url` (repeatable) and positional arguments accept YouTube video IDs, watch/short
+URLs, or yt-dlp search queries, forming the initial queue (default: the single
+proof-of-concept track). `-skin` accepts a `.wsz`, `.zip`, or a directory of
+loose BMPs. A file is opened as a ZIP regardless of its extension; modern `.wal`
+skins (`skin.xml`) are rejected with a clear message.
 
-Press `F1` for the debug overlay: FPS/TPS, playback state, cursor, sprite
-destinations (cyan), and widget hit areas (magenta). Missing sprites render as
-magenta boxes labelled with their names.
+Controls:
+
+- Mouse: Previous, Play, Pause, Stop, Next transport buttons.
+- Keyboard: `Space` play/pause, `S` stop, `Z`/`B` previous/next, `Left`/`Right`
+  seek ±5s, `Up`/`Down` volume ±10%, `R` cycle repeat (`off`/`all`/`one`), `H`
+  toggle shuffle, `F1` debug overlay.
+
+Press `F1` for the debug overlay: FPS/TPS, playback state, queue index,
+position, volume, shuffle/repeat, cursor, sprite destinations (cyan), and widget
+hit areas (magenta). Missing sprites render as magenta boxes labelled with
+their names.
 
 ## Development
 

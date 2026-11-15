@@ -1,10 +1,10 @@
 # Plan: from the PoC to a full YouTube Music player with classic `.wsz` skins
 
-Status: active execution plan. Phase 0 (seams) and Phase 1 (walking skeleton)
-are complete and merged; Phase 2 (playback core) is next. This document is the
-single source of truth; the root `PLAN.md` is historical brainstorming.
+Status: active execution plan. Phases 0, 1, and 2 are complete; Phase 3
+(catalog: search, metadata, artwork) is next. This document is the single
+source of truth; the root `PLAN.md` is historical brainstorming.
 
-Last updated: 2026-10-29.
+Last updated: 2026-11-15.
 
 ## 1. Where the project is today
 
@@ -23,18 +23,22 @@ Implemented and covered by tests:
   subset; a broken optional sheet becomes a warning.
 - `internal/ui/skinview` uploads each sheet once and caches `SubImage`
   textures. Missing or truncated sprites become labelled magenta placeholders.
-- `internal/ui` has hot/active press/release input, play/pause controls, a fixed
-  layout, and an F1 debug overlay. It draws the main background,
-  active/inactive title bar, and transport buttons from the skin.
-- The playback path resolves through `yt-dlp`, runs ffmpeg with `f32le`, stereo,
-  48 kHz PCM, and feeds the pipe to `ebiten/audio` with `NewPlayerF32`.
-- `internal/playback` still contains the Phase 0 single-track coordinator. The
-  UI starts it on a worker goroutine and sends pause/resume/close controls.
+- `internal/ui` has hot/active press/release input, all five main-window
+  transport controls (previous, play, pause, stop, next), keyboard shortcuts, a
+  fixed layout, and an F1 debug overlay showing state, queue index, position,
+  and volume.
+- `internal/playback` runs the Phase 2 actor (`Controller`), state machine,
+  queue (history, shuffle bag, repeat off/one/all), request-generation tracking,
+  seek-by-reopen (`baseOffset + sink.Position()`), URL prefetching, and error
+  taxonomy (`ErrToolMissing`, `ErrStaleStream`, `ErrFFmpeg`, `ErrNetwork`,
+  `ErrUnavailable`, `ErrCanceled`).
+- `internal/audio` runs ffmpeg with `f32le`, stereo, 48 kHz PCM, logs
+  `first_pcm_ms`, and exposes `SetVolume`/`Volume`/`Position` on `EbitenSink`.
 - Stream URLs are cached for five hours keyed by video ID; a zero-frame stream
   is treated as stale and retried once with a fresh URL.
-- Shutdown closes/kills the source before `PauseAndStopReading`, waits for the
-  playback goroutine, and leaves no ffmpeg process. Natural EOF waits for a
-  normal ffmpeg exit instead of killing in the EOF window.
+- Shutdown cancels the playback actor, waits for all worker goroutines and
+  ffmpeg processes, and closes the audio sink. Natural EOF waits for a normal
+  ffmpeg exit instead of killing in the EOF window.
 - `assets/dev-skin/` contains original BMPs at classic dimensions. No external
   skin art is committed.
 - The Phase 0 packages (`internal/ytdlp`, `internal/audio`, `internal/playback`,
@@ -42,12 +46,9 @@ Implemented and covered by tests:
 
 What is still missing:
 
-- Search, playlist import, queue, metadata, artwork, and persistence.
-- Stop, next/previous, seek, volume, shuffle, and repeat.
-- Full main-window chrome, bitmap text, playlist/EQ windows, colors, and the
-  complete Webamp sprite table.
-- The Phase 2 playback actor/snapshot. The UI currently keeps a `started` bool
-  and calls pause/resume directly.
+- Search, playlist import, metadata, artwork, and persistence.
+- Skinned playlist/EQ windows, bitmap text, volume/balance/seek bars, shuffle
+  and repeat buttons, and the complete Webamp sprite table.
 - Live catalog tests, skin fuzzing, a skin corpus, and cross-platform CI.
 
 Keep the good parts: process cancellation, the stale-URL retry, the PCM pipe,
@@ -617,8 +618,8 @@ Phases 0 and 1 are complete; Phase 2 is next.
 |-------|---------|------|--------|
 | 0 | Clean seams, tests, CLI still works | S | done |
 | 1 | Ebitengine window with a skinned main window and audio | M | done |
-| 2 | Playback core: queue, seek, recovery | L | next |
-| 3 | Catalog: search, metadata, artwork | M-L | planned |
+| 2 | Playback core: queue, seek, recovery | L | done |
+| 3 | Catalog: search, metadata, artwork | M-L | next |
 | 4 | Complete classic skin system | L | planned |
 | 5 | Full player UX and persistence | L | planned |
 | 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | optional |
@@ -707,29 +708,36 @@ leaves no ffmpeg; broken skin returns a clear error; F1 works; `go test -race
 **Learn:** Ebitengine game loop, logical vs. physical pixels, `SubImage`,
 input APIs, audio player lifecycle, PCM frame layout, process EOF vs. kill.
 
-### Phase 2 — Playback core (next)
+### Phase 2 — Playback core (done)
 
 **Goal:** a headless engine good enough that the UI can be dumb. Replace the
 current single-track `playback.Player` with the actor, queue, and snapshot.
 
-**Work**
+**Outcome:** completed. Replaced the single-track `playback.Player` with
+`playback.Controller`, explicit state transition table, queue with history,
+shuffle bag, and repeat modes, generation-tagged resolve/open workers,
+seek-by-reopen, URL prefetching, error taxonomy, and UI/CLI wiring for all five
+main transport buttons and keyboard shortcuts.
 
-- Commands/events and the actor goroutine; atomic `Snapshot`.
-- Queue model: `[]Track`, index, history, shuffle bag, repeat off/one/all.
-- Async resolve/open with request generations; seek by recreating the pipeline.
-- EOF/auto-advance; prefetch next URL; position tracking.
-- Pause/stop semantics; volume; stale-URL retry; error taxonomy.
-- Fake `Opener`/`Resolver` for tests; integration tests gated by env.
-- Wire the app: UI sends commands, drains events, shows state.
+**Work as implemented**
 
-**Verify:** a 10-track queue plays through; seek ~1 s; pause/resume has no
-restart; killing the network produces a recoverable error; no goroutine leak
-after 20 track changes; `go test -race ./...`.
+- Sealed `Command`/`Event` types, `Controller` actor goroutine, and atomic
+  `Snapshot` (`baseOffset + sink.Position()`).
+- Queue (`internal/playback/queue.go`): `[]model.Track`, index, bounded history,
+  shuffle bag (non-repeating cycle with immediate-repeat avoidance on refill),
+  and `RepeatOff`/`RepeatAll`/`RepeatOne`.
+- Generation-tagged async resolve/open/play workers; seek restarts ffmpeg at
+  the target offset via `-ss`.
+- Natural-EOF auto-advance, next-track URL prefetching near end of track,
+  stale-URL retry once on `ErrNoAudio`, and `EbitenSink` `SetVolume`/`Position`.
+- Error taxonomy (`ErrToolMissing`, `ErrStaleStream`, `ErrFFmpeg`, `ErrNetwork`,
+  `ErrUnavailable`, `ErrCanceled`) mapped to user-facing messages.
+- Wired `ui.Game` and `cmd/ytm-wmp` to `playback.Controller` with Previous, Play,
+  Pause, Stop, and Next buttons, keyboard controls, and updated F1 debug overlay.
+- Unit tests with fakes (`go test -race ./...`), goroutine-leak verification
+  across 20 track changes, and opt-in `YTM_WMP_LIVE_TEST=1` integration test.
 
-**Learn:** actor/CSP, state machines, backpressure, process lifetime, ffmpeg
-seeking, audio clocks, request IDs.
-
-### Phase 3 — Catalog: search, metadata, artwork
+### Phase 3 — Catalog: search, metadata, artwork (next)
 
 **Goal:** stop hardcoding tracks.
 

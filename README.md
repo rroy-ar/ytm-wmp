@@ -51,17 +51,21 @@ in Phases 4-5.
   tests, and `-catalog ytmusic|ytdlp` selection (default `ytmusic`) in
   `cmd/ytm-wmp` and `cmd/ytmctl` while keeping `yt-dlp` for stream resolution.
 
+- **Phase 4 — Classic Skin System**: ported Webamp's complete `skinSprites.ts`
+  sprite table and `FONT_LOOKUP`, added `pledit.txt`/`viscolor.txt` parsing,
+  `OpenBytes`/`OpenFS`, and `FuzzSkinOpen`, extended `assets/dev-skin/` with
+  full Phase 4 assets, added `internal/m3u` import/export and queue
+  removal/sort commands, built the docked/stacked Winamp rack (`Main 275x116`,
+  toggleable `EQ 275x116`, toggleable `Playlist/Browser 275x232`), main
+  window bitmap marquee/time digits/volume/balance/seek/shuffle/repeat/EQ/PL
+  controls, skinned `pledit.bmp` playlist editor with popup menus, and skinned
+  `eqmain.bmp` equalizer with atomic `eq.json` persistence.
+
 ### What's next
 
-- **Phase 4 — Classic Skin System**: complete Webamp sprite table, bitmap
-  `text.bmp`/`numbers.bmp` rendering, position/volume/balance sliders,
-  shuffle/repeat/EQ/PL toggles, `pledit.txt`/`viscolor.txt`, docked/stacked
-  Winamp rack (`Main 275x116`, toggleable `EQ 275x116`, toggleable
-  `Playlist/Browser 275x232`), skinned playlist (`pledit.bmp`) and equalizer
-  (`eqmain.bmp`) windows, and skin loader fuzzing.
 - **Phase 5 — Full Player UX & Persistence**: versioned atomic JSON persistence
-  for skin, volume, queue, and window positions; M3U import/export; error
-  toasts; and settings UI.
+  for skin, volume, queue, and window layout (`config.json`); browser tabs
+  (songs/playlists/albums/artists); error toasts; and settings UI.
 - **Phase 6 (optional) & Phase 7**: EQ DSP, spectrum/oscilloscope visualizer,
   shade/2x/`region.txt` modes, performance/allocation profiling, packaging, and
   `v0.1` release hardening.
@@ -103,6 +107,7 @@ go run ./cmd/ytm-wmp -url 'https://www.youtube.com/watch?v=...' -url 'https://ww
 go run ./cmd/ytm-wmp -query 'daft punk'
 go run ./cmd/ytm-wmp -catalog ytdlp -query 'daft punk'
 go run ./cmd/ytm-wmp -playlist 'https://music.youtube.com/playlist?list=...'
+go run ./cmd/ytm-wmp -autoplay=false -url '0wRYvsfhsR8'
 go run ./cmd/ytm-wmp <track1> <track2>
 go run ./cmd/ytm-wmp -skin /path/to/skin.wsz
 go run ./cmd/ytm-wmp -skin ./some/loose-bmp-directory
@@ -113,8 +118,12 @@ go run ./cmd/ytm-wmp -debug
 URLs, or yt-dlp search queries, forming the initial queue (default: the single
 proof-of-concept track unless `-query` or `-playlist` is set). `-catalog` chooses
 the metadata/search backend (`ytmusic`, the pure-Go InnerTube `WEB_REMIX` default,
-or `ytdlp`). `-query` runs an initial catalog search on startup, and `-playlist`
-loads a playlist or album URL/ID. `-skin` accepts a `.wsz`, `.zip`, or a
+or `ytdlp`). Even with `-catalog ytmusic`, prefixing a search query with `yt:` or
+`ytdlp:` searches regular YouTube via `yt-dlp` for videos not indexed on YouTube
+Music. `-autoplay` (default `true` when using `ytmusic`) automatically queues
+unauthenticated YouTube Music Up Next / radio suggestions (`RDAMVM...`) when the
+queue ends with repeat off. `-query` runs an initial catalog search on startup, and `-playlist`
+loads a playlist, album URL/ID, or local `.m3u`/`.m3u8` file. `-skin` accepts a `.wsz`, `.zip`, or a
 directory of loose BMPs. A file is opened as a ZIP regardless of its extension;
 modern `.wal` skins (`skin.xml`) are rejected with a clear message.
 
@@ -125,23 +134,31 @@ go run ./cmd/ytmctl search -limit 10 "daft punk"
 go run ./cmd/ytmctl -catalog ytdlp search -limit 10 "daft punk"
 go run ./cmd/ytmctl track 0wRYvsfhsR8
 go run ./cmd/ytmctl playlist -limit 20 "PL..."
+go run ./cmd/ytmctl radio -limit 20 0wRYvsfhsR8
 go run ./cmd/ytmctl artwork 0wRYvsfhsR8
 ```
 
 Controls:
 
-- Mouse: Previous, Play, Pause, Stop, Next, Eject (focuses search) transport
-  buttons; browser search bar (`GO`, `CLR`, middle/right-click search box to
-  paste), result rows (click to select, click selected row to play),
-  `PLAY`/`QUEUE`/`ALL->Q` actions, mouse wheel scroll, and now-playing artwork
-  preview toggle.
-- Keyboard: `/` focus search, `Ctrl+V` / `Super+V` / `Shift+Insert` paste into
-  search (URLs replace existing query and watch URLs resolve single tracks; on
-  Linux uses `xclip`, `xsel`, or `wl-paste`), `Ctrl+U` / `Ctrl+Backspace` clear
-  search while focused, `Enter` submit search, `Esc` unfocus search/modal,
+- Mouse: Previous, Play, Pause, Stop, Next, Eject (opens/focuses catalog
+  search) transport buttons; main window time display (click to toggle
+  elapsed/remaining), volume/balance/seek bars, `SHUF`/`REP`/`EQ`/`PL` toggles,
+  and close button; EQ window `ON`/`AUTO`/`PRESETS`/`+12dB`/`0dB`/`-12dB` and
+  preamp/10-band sliders; skinned Playlist window (`SEARCH` toggle, row
+  click/`Ctrl+Click`/`Shift+Click`/double-click to play, scrollbar/wheel,
+  `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus including M3U save/load, mini
+  transport controls); browser search bar (`PL` toggle, `GO`, `CLR`,
+  middle/right-click search box to paste), result rows, `PLAY`/`QUEUE`/`ALL->Q`/
+  `AUTO` actions, and now-playing artwork preview toggle.
+- Keyboard: `/` focus search, `E` toggle EQ window, `P` toggle Playlist/Browser
+  panel, `Delete` remove selected playlist rows, `Ctrl+A` select all playlist
+  rows, `Ctrl+V` / `Super+V` / `Shift+Insert` paste into search (or import M3U/URLs
+  when Playlist is focused), `Ctrl+U` / `Ctrl+Backspace` clear search while
+  focused, `Enter` submit search, `Esc` unfocus search/modal/menu,
   `Space` play/pause, `S` stop, `Z`/`B` previous/next, `Left`/`Right` seek ±5s,
   `Up`/`Down` volume ±10% (or move selection while searching), `R` cycle repeat
-  (`off`/`all`/`one`), `H` toggle shuffle, `F1` debug overlay.
+  (`off`/`all`/`one`), `H` toggle shuffle, `A` toggle Up Next radio autoplay,
+  `F1` debug overlay.
 
 Press `F1` for the debug overlay: FPS/TPS, playback state, queue index,
 position, volume, shuffle/repeat, cursor, sprite destinations (cyan), and widget
@@ -173,11 +190,12 @@ Layout:
 | `internal/catalog/ytdlp` | `yt-dlp -J` catalog implementation and in-memory caches |
 | `internal/catalog/ytmusic` | Pure-Go YouTube Music InnerTube `WEB_REMIX` catalog backend |
 | `internal/artwork` | thumbnail fetch, JPEG/PNG/WebP decode, resize, disk + LRU cache |
+| `internal/m3u` | `#EXTM3U` import/export of YouTube URLs and video IDs |
 | `internal/audio` | ffmpeg PCM source and Ebitengine audio sink |
 | `internal/playback` | actor controller, queue, state machine, error taxonomy |
 | `internal/deps` | external tool discovery and versions |
-| `internal/skin` | pure `.wsz`/`.zip`/directory loader and sprite table |
-| `internal/ui` | game loop, immediate-mode input, layout, `browserPanel` |
+| `internal/skin` | pure `.wsz`/`.zip`/directory loader, `pledit.txt`/`viscolor.txt`, sprite table |
+| `internal/ui` | game loop, immediate-mode input, docked rack (Main/EQ/Playlist/Browser) |
 | `internal/ui/skinview` | one-time GPU upload and sprite cache |
 | `assets/dev-skin` | original loose-BMP development skin |
 | `docs/plan` | delivery plan |

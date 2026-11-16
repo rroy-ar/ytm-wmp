@@ -1,63 +1,74 @@
 # Plan: from the PoC to a full YouTube Music player with classic `.wsz` skins
 
-Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are
-complete; Phase 4 (complete classic skin system) is next ahead of Phase 5
-(full player UX and persistence). This document is the single source of truth for
+Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, and 4
+(complete classic skin system) are complete; Phase 5 (full player UX and
+persistence) is next. This document is the single source of truth for
 architecture, status, and upcoming milestones.
 
-Last updated: 2026-11-15.
+Last updated: 2026-11-16.
 
 ## 1. Where the project is today
 
-Phases 1–3B turned the PoC into a multi-track, catalog-backed desktop player
-with clear architectural seams and both pure-Go YouTube Music InnerTube
-(`WEB_REMIX`) and `yt-dlp` catalog backends.
+Phases 1–4 turned the PoC into a multi-track, catalog-backed, fully skinned
+desktop player with clear architectural seams, pure-Go YouTube Music InnerTube
+(`WEB_REMIX`) and `yt-dlp` catalog backends, and classic main, playlist, and
+equalizer chrome.
 
 Implemented and covered by tests:
 
 - `cmd/ytm-wmp` is wiring only: `-url`, `-skin`, `-catalog`, `-query`,
-  `-playlist`, `-debug`, dependency checks, signal handling, skin loading,
-  catalog/artwork wiring, and `ebiten.RunGame`.
-- `cmd/ytmctl` provides a debug CLI for `search`, `track`, `playlist`, and
-  `artwork` with `-catalog ytmusic|ytdlp` (resolving cold-cache artwork via
+  `-playlist`, `-autoplay`, `-debug`, dependency checks, signal handling, skin
+  loading, catalog/artwork wiring, and `ebiten.RunGame`.
+- `cmd/ytmctl` provides a debug CLI for `search`, `track`, `playlist`, `radio`,
+  and `artwork` with `-catalog ytmusic|ytdlp` (resolving cold-cache artwork via
   `catalog.Catalog` or `model.DefaultThumbnailURL`).
 - Ebitengine v2.10.5 opens a 275x348 logical canvas (275x116 skinned main window
   plus 275x232 catalog browser panel).
 - `internal/model` owns shared domain types (`Track`, `StreamInfo`) and pure
   YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`,
   `DefaultThumbnailURL`).
-- `internal/catalog` defines the `Catalog` interface, `IsPlaylistTarget`
-  (playlist URLs/IDs plus YTM `/browse/...`, `VL...`, `MPREb_...`, and
-  `RDCLAK5uy_...` targets), and a debounced, generation-tagged async
-  `Searcher` (including direct single-track resolution via `Catalog.Track` for
-  pasted YouTube watch URLs); `internal/catalog/ytmusic` implements pure-Go
-  YouTube Music InnerTube `WEB_REMIX` (`search`, `next`, `browse`) with response
-  byte caps and search/track TTL caches; `internal/catalog/ytdlp` implements
-  `yt-dlp -J` search, track metadata, and playlist extraction with stdout caps
-  and search/track caches.
+- `internal/catalog` defines the `Catalog` interface, `RadioProvider`,
+  `IsPlaylistTarget` (playlist URLs/IDs plus YTM `/browse/...`, `VL...`,
+  `MPREb_...`, and `RDCLAK5uy_...` targets), and a debounced, generation-tagged
+  async `Searcher` (including direct single-track resolution via `Catalog.Track`
+  for pasted YouTube watch URLs and `yt:` / `ytdlp:` prefix routing to the
+  regular YouTube `yt-dlp` fallback catalog); `internal/catalog/ytmusic` implements pure-Go
+  YouTube Music InnerTube `WEB_REMIX` (`search`, `next`, `browse`, plus
+  unauthenticated `RDAMVM...` Up Next radio via `catalog.RadioProvider`) with
+  response byte caps and search/track/radio TTL caches; `internal/catalog/ytdlp`
+  implements `yt-dlp -J` search, track metadata, and playlist extraction with
+  stdout caps and search/track caches.
 - `internal/artwork` fetches, decodes (JPEG/PNG/WebP), resizes (64x64 list and
   300x300 now-playing), and caches thumbnails on disk and in an in-memory LRU.
-- `internal/skin` loads `.wsz`, `.zip`, or a directory of loose BMPs. It
-  normalizes case, backslashes, and nested paths, rejects modern `skin.xml`
-  skins, caps per-asset/total bytes, total pixels, and ZIP entries, and handles
-  32-bit all-zero-alpha BMPs. Phase 1 covers the main/titlebar/cbuttons sprite
-  subset; a broken optional sheet becomes a warning.
+- `internal/skin` loads `.wsz`, `.zip`, `fs.FS`, or a directory of loose BMPs
+  plus `pledit.txt` and `viscolor.txt`. It normalizes case, backslashes, and
+  nested paths, rejects modern `skin.xml` skins, caps per-asset/total bytes,
+  total pixels, and ZIP entries, handles 32-bit all-zero-alpha BMPs, provides
+  the complete Webamp `skinSprites.ts` sprite table, slider-frame rects, and
+  `text.bmp` glyph lookup, and is fuzzed via `FuzzSkinOpen`.
 - `internal/ui/skinview` uploads each sheet once and caches `SubImage`
-  textures. Missing or truncated sprites become labelled magenta placeholders.
-- `internal/ui` has hot/active press/release input, all five main-window
-  transport controls (previous, play, pause, stop, next) plus Eject/search
-  focus, keyboard shortcuts, clipboard paste (`Ctrl+V` / `Super+V` /
-  `Shift+Insert` / middle- or right-click via OS clipboard tools in
-  `clipboard.go`) and `Ctrl+U` / `Ctrl+Backspace` search clearing, named layout
-  bounds (`layout.go`), `browserPanel`, bounded background enrichment/artwork
-  workers, lazy `300x300` texture uploads with deterministic `Deallocate()`, and
-  an F1 debug overlay showing state, queue index, position, volume,
-  shuffle/repeat, and hit areas.
+  textures, 28-frame volume/balance/EQ slider strips, `EQ_GRAPH_LINE_COLORS`,
+  `text.bmp` bitmap glyphs, `pledit.txt` styles, and `viscolor.txt` palettes.
+  Missing or truncated sprites become labelled magenta placeholders.
+- `internal/m3u` parses and formats `#EXTM3U` playlists of YouTube URLs/IDs.
+- `internal/ui` implements the docked/stacked Winamp rack (`Main 275x116`,
+  toggleable `EQ 275x116`, toggleable `Playlist/Browser 275x232`) with discrete
+  OS window resizes on `EQ`/`PL` toggles, active/inactive titlebars, main
+  window bitmap marquee/time digits/volume/balance/seek/shuffle/repeat/EQ/PL
+  controls, skinned `pledit.bmp` playlist editor (virtualized rows,
+  click/Ctrl-click/Shift-click selection, double-click play, scrollbar/wheel,
+  `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus, M3U import/export), skinned
+  `eqmain.bmp` equalizer (preamp + 10 bands, response graph, presets, atomic
+  `eq.json` persistence), `browserPanel` catalog search/artwork preview,
+  clipboard paste (`Ctrl+V` / `Super+V` / `Shift+Insert` / middle- or
+  right-click), and an `F1` debug overlay.
 - `internal/playback` runs the Phase 2 actor (`Controller`), state machine,
   queue (history, shuffle bag, repeat off/one/all), request-generation tracking,
   seek-by-reopen (`baseOffset + sink.Position()`), zero-copy read-only
-  `Snapshot.Queue`, URL prefetching, and error taxonomy (`ErrToolMissing`,
-  `ErrStaleStream`, `ErrFFmpeg`, `ErrNetwork`, `ErrUnavailable`, `ErrCanceled`).
+  `Snapshot.Queue`, URL prefetching, optional `RadioProvider` queue-end
+  autoplay (with pre-EOF radio + stream URL prefetching), and error taxonomy
+  (`ErrToolMissing`, `ErrStaleStream`, `ErrFFmpeg`, `ErrNetwork`,
+  `ErrUnavailable`, `ErrCanceled`).
 - `internal/audio` runs ffmpeg with `f32le`, stereo, 48 kHz PCM, logs
   `first_pcm_ms`, and exposes `SetVolume`/`Volume`/`Position` on `EbitenSink`.
 - `internal/ytdlp` resolves stream URLs (`yt-dlp -g`) with bounded stdout/stderr
@@ -72,10 +83,9 @@ Implemented and covered by tests:
 
 What is still missing:
 
-- Persistence (config, queue, layout) and M3U import/export.
-- Skinned playlist/EQ windows, bitmap text, volume/balance/seek bars, shuffle
-  and repeat buttons, and the complete Webamp sprite table.
-- Skin fuzzing, a skin corpus, and cross-platform CI.
+- Global config persistence (`config.json`: skin, volume, queue, window layout,
+  last search) and settings/tabs UX (Phase 5).
+- Real `.wsz` skin corpus smoke verification and cross-platform CI (Phase 7).
 
 Keep the good parts: process cancellation, the stale-URL retry, the PCM pipe,
 and the short time-to-first-audio. Do not rewrite them into a framework.
@@ -88,8 +98,8 @@ This is already a large v1. Do not add to it without cutting something else.
       a watch/playlist URL (M3U import arrives in Phase 4C/5).
 - [x] Queue with play, pause, stop, next, previous, seek, volume, shuffle, repeat.
 - [x] Metadata, duration, and artwork for the current track.
-- [ ] Classic `.wsz` main window, playlist, and equalizer chrome.
-- [ ] Working skinned controls and playlist interaction.
+- [x] Classic `.wsz` main window, playlist, and equalizer chrome.
+- [x] Working skinned controls and playlist interaction.
 - [ ] Persist skin, volume, queue, playlists, and window positions.
 - [x] Recover from expired URLs, network failures, and missing tools with
       actionable errors.
@@ -282,6 +292,7 @@ type Snapshot struct {
     Index     int
     Shuffle   bool
     Repeat    RepeatMode
+    Autoplay  bool
     LastError string
 }
 
@@ -344,8 +355,8 @@ func (s *Skin) Warnings() []string
 
 Commands/events are sealed types (`Play`, `PlayIndex`, `Pause`, `Resume`,
 `Stop`, `Next`, `Prev`, `Seek`, `SetVolume`, `SetQueue`, `Enqueue`,
-`UpdateTrack`, `SetShuffle`, `SetRepeat`; `StateChanged`, `TrackChanged`,
-`QueueChanged`, `VolumeChanged`, `PlaybackError`).
+`UpdateTrack`, `SetShuffle`, `SetRepeat`, `SetAutoplay`; `StateChanged`,
+`TrackChanged`, `QueueChanged`, `VolumeChanged`, `PlaybackError`).
 
 ## 6. `.wsz` parser design
 
@@ -691,8 +702,8 @@ Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are complete; Phase 4 is next.
 | 2 | Playback core: queue, seek, recovery | L | done |
 | 3A | `yt-dlp` catalog, artwork cache, browser panel | M | done |
 | 3B | Pure-Go YTM InnerTube `WEB_REMIX` catalog backend | S-M | done |
-| 4 | Complete classic skin system | L | next |
-| 5 | Full player UX and persistence | L | planned |
+| 4 | Complete classic skin system | L | done |
+| 5 | Full player UX and persistence | L | next |
 | 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | optional |
 | 7 | Hardening and v0.1 release | M | planned |
 
@@ -858,9 +869,21 @@ pass without network.
 **Learn:** JSON decoding, subprocess output, HTTP timeouts, image decoding and
 resizing, caching, debouncing.
 
-### Phase 4 — Classic skin system
+### Phase 4 — Classic skin system (done)
 
 **Goal:** the distinctive part: full main, playlist, and EQ chrome.
+
+**Outcome:** completed Phases 4A–4D. Ported Webamp's `skinSprites.ts` sprite
+table and `FONT_LOOKUP`, added `pledit.txt`/`viscolor.txt` parsing, `OpenBytes`/
+`OpenFS`, and `FuzzSkinOpen`, extended `assets/dev-skin/` with all Phase 4
+sheets, added `internal/m3u` and queue removal/sort commands in
+`internal/playback`, pre-cached slider frames and bitmap glyphs in
+`internal/ui/skinview`, and built the docked/stacked Winamp rack (`Main`,
+toggleable `EQ`, toggleable `Playlist`/`Browser`) with main LCD marquee/digits/
+sliders/toggles, skinned `pledit.bmp` playlist editor + popup menus + M3U
+import/export, and skinned `eqmain.bmp` equalizer with atomic `eq.json`
+persistence. Remaining from Phase 4 verify checklist: external multi-skin
+corpus visual check (kept out of git).
 
 **4A. Parser and main-window renderer**
 
@@ -1070,6 +1093,15 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `727ae4a` feat(cmd): wire autoplay, yt fallback, rack persistence, and M3U startup
+- `b96a4e0` feat(ui): implement docked Winamp rack, main controls, skinned playlist, and EQ
+- `47721ce` feat(skinview): cache slider frames, bitmap glyphs, and skin color configs
+- `d4ec6ff` feat(playback): add radio autoplay, RemoveIndices, and SortQueue
+- `80f66d9` feat(m3u): add EXTM3U parser and formatter for YouTube URLs and IDs
+- `e191bc5` feat(assets): extend dev-skin with Phase 4 classic sheets
+- `decb02d` feat(skin): port Webamp sprite table, pledit/viscolor parsing, and fuzzing
+- `66ed9c9` feat(catalog,ytmctl): add YTM radio provider and yt: fallback search
+- `3b29368` docs: document browser paste shortcuts and watch-URL lookup
 - `07de33b` feat(ui): support clipboard paste and line-clear in browser search
 - `be03d09` feat(catalog): resolve single-track YouTube watch URLs in Searcher
 - `b69554b` docs: record Phase 3B completion and document ytmusic catalog
@@ -1103,9 +1135,8 @@ Recent trail as of this update (newest first):
 - `d4d9042` feat(skin): load classic .wsz archives and loose BMP directories
 - `1858514` refactor: land phase 0 architecture seams
 
-Next up is Phase 4A/4B (full Webamp sprite table, `pledit.txt`/`viscolor.txt`,
-bitmap text/digits, sliders/toggles, and the docked/stacked Winamp rack window
-manager), followed by Phase 5 (full player UX and persistence).
+Next up is Phase 5 (full player UX and persistence: versioned `config.json` for
+skin/volume/queue/layout, browser tabs, error toasts, and settings UI).
 
 ## 15. Open questions
 

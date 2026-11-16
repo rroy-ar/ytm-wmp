@@ -49,16 +49,28 @@ const (
 
 	// songsSearchParams filters WEB_REMIX search results to the Songs shelf.
 	songsSearchParams = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
-	targetThumbDim    = 360
+	// albumsSearchParams filters WEB_REMIX search results to the Albums shelf.
+	albumsSearchParams = "EgWKAQIYAWoKEAkQBRAKEAMQBA%3D%3D"
+	// artistsSearchParams filters WEB_REMIX search results to the Artists shelf.
+	artistsSearchParams = "EgWKAQIgAWoKEAkQBRAKEAMQBA%3D%3D"
+	// playlistsSearchParams filters WEB_REMIX search results to Playlists.
+	playlistsSearchParams = "EgWKAQIoAWoKEAkQBRAKEAMQBA%3D%3D"
+	targetThumbDim        = 360
 )
 
 var (
 	_ catalog.Catalog       = (*Client)(nil)
 	_ catalog.RadioProvider = (*Client)(nil)
+	_ catalog.TabCatalog    = (*Client)(nil)
 )
 
 type cachedTracks struct {
 	tracks  []model.Track
+	expires time.Time
+}
+
+type cachedCollections struct {
+	items   []catalog.Collection
 	expires time.Time
 }
 
@@ -83,10 +95,11 @@ type Client struct {
 	maxBytes      int64
 	now           func() time.Time
 
-	mu          sync.Mutex
-	searchCache map[string]cachedTracks
-	trackCache  map[string]cachedTrack
-	radioCache  map[string]cachedTracks
+	mu              sync.Mutex
+	searchCache     map[string]cachedTracks
+	collectionCache map[string]cachedCollections
+	trackCache      map[string]cachedTrack
+	radioCache      map[string]cachedTracks
 }
 
 // Option customizes a Client.
@@ -190,22 +203,23 @@ func WithMaxResponseBytes(n int64) Option {
 // New creates an InnerTube WEB_REMIX catalog Client.
 func New(opts ...Option) *Client {
 	c := &Client{
-		httpClient:    &http.Client{},
-		baseURL:       DefaultBaseURL,
-		clientName:    DefaultClientName,
-		clientVersion: DefaultClientVersion,
-		hl:            "en",
-		gl:            "US",
-		userAgent:     DefaultUserAgent,
-		timeout:       DefaultTimeout,
-		searchTTL:     DefaultSearchTTL,
-		trackTTL:      DefaultTrackTTL,
-		playlistLimit: DefaultPlaylistLimit,
-		maxBytes:      DefaultMaxResponseBytes,
-		now:           time.Now,
-		searchCache:   make(map[string]cachedTracks),
-		trackCache:    make(map[string]cachedTrack),
-		radioCache:    make(map[string]cachedTracks),
+		httpClient:      &http.Client{},
+		baseURL:         DefaultBaseURL,
+		clientName:      DefaultClientName,
+		clientVersion:   DefaultClientVersion,
+		hl:              "en",
+		gl:              "US",
+		userAgent:       DefaultUserAgent,
+		timeout:         DefaultTimeout,
+		searchTTL:       DefaultSearchTTL,
+		trackTTL:        DefaultTrackTTL,
+		playlistLimit:   DefaultPlaylistLimit,
+		maxBytes:        DefaultMaxResponseBytes,
+		now:             time.Now,
+		searchCache:     make(map[string]cachedTracks),
+		collectionCache: make(map[string]cachedCollections),
+		trackCache:      make(map[string]cachedTrack),
+		radioCache:      make(map[string]cachedTracks),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -333,6 +347,135 @@ func (c *Client) Playlist(ctx context.Context, idOrURL string) ([]model.Track, e
 	}
 	c.cacheTracks(tracks)
 	return tracks, nil
+}
+
+// SupportedTabs reports the catalog search tabs supported by InnerTube WEB_REMIX.
+func (c *Client) SupportedTabs() []catalog.SearchTab {
+	return []catalog.SearchTab{
+		catalog.TabSongs,
+		catalog.TabPlaylists,
+		catalog.TabAlbums,
+		catalog.TabArtists,
+	}
+}
+
+// SearchCollections searches playlists, albums, or artists via InnerTube `/search`.
+func (c *Client) SearchCollections(ctx context.Context, tab catalog.SearchTab, query string, limit int) ([]catalog.Collection, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, catalog.ErrEmptyQuery
+	}
+	if limit <= 0 {
+		limit = DefaultSearchLimit
+	} else if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
+	}
+
+	var params string
+	switch tab {
+	case catalog.TabPlaylists:
+		params = playlistsSearchParams
+	case catalog.TabAlbums:
+		params = albumsSearchParams
+	case catalog.TabArtists:
+		params = artistsSearchParams
+	default:
+		return nil, fmt.Errorf("unsupported collection search tab %q", tab)
+	}
+
+	key := fmt.Sprintf("%s:%d:%s", tab, limit, strings.ToLower(query))
+	if c.searchTTL > 0 {
+		now := c.now()
+		c.mu.Lock()
+		cached, ok := c.collectionCache[key]
+		c.mu.Unlock()
+		if ok && now.Before(cached.expires) {
+			return append([]catalog.Collection(nil), cached.items...), nil
+		}
+	}
+
+	var resp searchResponse
+	err := c.postJSON(ctx, "search", innerTubeRequest{
+		Query:  query,
+		Params: params,
+	}, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("ytmusic %s search %q: %w", tab, query, err)
+	}
+
+	items := extractSearchCollections(resp, tab, limit)
+	if c.searchTTL > 0 {
+		c.mu.Lock()
+		c.collectionCache[key] = cachedCollections{
+			items:   append([]catalog.Collection(nil), items...),
+			expires: c.now().Add(c.searchTTL),
+		}
+		c.mu.Unlock()
+	}
+	return append([]catalog.Collection(nil), items...), nil
+}
+
+// BrowseCollection loads track and optional discography details for a playlist,
+// album, or artist collection.
+func (c *Client) BrowseCollection(ctx context.Context, col catalog.Collection) (catalog.CollectionDetail, error) {
+	id := strings.TrimSpace(col.ID)
+	if id == "" {
+		return catalog.CollectionDetail{}, catalog.ErrEmptyQuery
+	}
+
+	if col.Kind == catalog.CollectionArtist || strings.HasPrefix(id, "UC") {
+		var resp browseResponse
+		if err := c.postJSON(ctx, "browse", innerTubeRequest{BrowseID: id}, &resp); err != nil {
+			return catalog.CollectionDetail{}, fmt.Errorf("ytmusic browse artist %q: %w", id, err)
+		}
+		detail := extractArtistDetail(resp, col)
+		if c.playlistLimit > 0 && len(detail.Tracks) > c.playlistLimit {
+			detail.Tracks = detail.Tracks[:c.playlistLimit]
+		}
+		c.cacheTracks(detail.Tracks)
+		return detail, nil
+	}
+
+	browseID, playlistID := parsePlaylistTarget(id)
+	if browseID == "" {
+		return catalog.CollectionDetail{}, fmt.Errorf("%w: %q", catalog.ErrNotFound, id)
+	}
+	var resp browseResponse
+	if err := c.postJSON(ctx, "browse", innerTubeRequest{BrowseID: browseID}, &resp); err != nil {
+		return catalog.CollectionDetail{}, fmt.Errorf("ytmusic browse %q: %w", id, err)
+	}
+	tracks := extractBrowseTracks(resp, browseID)
+	if len(tracks) == 0 && playlistID != "" && !strings.HasPrefix(playlistID, "MPREb_") {
+		var nextResp nextResponse
+		if nextErr := c.postJSON(ctx, "next", innerTubeRequest{PlaylistID: playlistID}, &nextResp); nextErr == nil {
+			for _, candidate := range extractNextTracks(nextResp) {
+				tracks = append(tracks, candidate.track)
+			}
+		} else {
+			return catalog.CollectionDetail{}, fmt.Errorf("ytmusic browse %q: %w", id, nextErr)
+		}
+	}
+	if c.playlistLimit > 0 && len(tracks) > c.playlistLimit {
+		tracks = tracks[:c.playlistLimit]
+	}
+	c.cacheTracks(tracks)
+
+	updated := col
+	if hdr := findBrowseHeader(resp); hdr != nil {
+		if t := joinRunsText(hdr.Title); t != "" {
+			updated.Title = t
+		}
+		if sub := joinRunsText(hdr.StraplineTextOne); sub != "" && updated.Subtitle == "" {
+			updated.Subtitle = sub
+		}
+		if u := pickBestThumbnailURL(extractThumbnails(hdr.Thumbnail)); u != "" && updated.ThumbnailURL == "" {
+			updated.ThumbnailURL = u
+		}
+	}
+	return catalog.CollectionDetail{
+		Collection: updated,
+		Tracks:     tracks,
+	}, nil
 }
 
 // Related fetches unauthenticated YouTube Music Up Next / radio tracks seeded
@@ -594,20 +737,44 @@ type sectionListRenderer struct {
 }
 
 type sectionItem struct {
-	MusicShelfRenderer              *musicShelfRenderer     `json:"musicShelfRenderer"`
-	MusicPlaylistShelfRenderer      *musicShelfRenderer     `json:"musicPlaylistShelfRenderer"`
-	MusicCardShelfRenderer          *musicCardShelfRenderer `json:"musicCardShelfRenderer"`
-	MusicResponsiveHeaderRenderer   *responsiveHeader       `json:"musicResponsiveHeaderRenderer"`
-	MusicEditablePlaylistDetailHdr  *editablePlaylistHeader `json:"musicEditablePlaylistDetailHeaderRenderer"`
-	MusicDetailHeaderRenderer       *responsiveHeader       `json:"musicDetailHeaderRenderer"`
-	ItemSectionRenderer             *sectionListRenderer    `json:"itemSectionRenderer"`
-	MusicResponsiveListItemRenderer *responsiveListItem     `json:"musicResponsiveListItemRenderer"`
+	MusicShelfRenderer              *musicShelfRenderer         `json:"musicShelfRenderer"`
+	MusicPlaylistShelfRenderer      *musicShelfRenderer         `json:"musicPlaylistShelfRenderer"`
+	MusicCarouselShelfRenderer      *musicCarouselShelfRenderer `json:"musicCarouselShelfRenderer"`
+	MusicCardShelfRenderer          *musicCardShelfRenderer     `json:"musicCardShelfRenderer"`
+	MusicResponsiveHeaderRenderer   *responsiveHeader           `json:"musicResponsiveHeaderRenderer"`
+	MusicEditablePlaylistDetailHdr  *editablePlaylistHeader     `json:"musicEditablePlaylistDetailHeaderRenderer"`
+	MusicDetailHeaderRenderer       *responsiveHeader           `json:"musicDetailHeaderRenderer"`
+	ItemSectionRenderer             *sectionListRenderer        `json:"itemSectionRenderer"`
+	MusicResponsiveListItemRenderer *responsiveListItem         `json:"musicResponsiveListItemRenderer"`
 }
 
 type browseHeader struct {
 	MusicResponsiveHeaderRenderer             *responsiveHeader       `json:"musicResponsiveHeaderRenderer"`
 	MusicEditablePlaylistDetailHeaderRenderer *editablePlaylistHeader `json:"musicEditablePlaylistDetailHeaderRenderer"`
 	MusicDetailHeaderRenderer                 *responsiveHeader       `json:"musicDetailHeaderRenderer"`
+	MusicImmersiveHeaderRenderer              *responsiveHeader       `json:"musicImmersiveHeaderRenderer"`
+	MusicVisualHeaderRenderer                 *responsiveHeader       `json:"musicVisualHeaderRenderer"`
+}
+
+type musicCarouselShelfRenderer struct {
+	Header *struct {
+		MusicCarouselShelfBasicHeaderRenderer *struct {
+			Title *textRuns `json:"title"`
+		} `json:"musicCarouselShelfBasicHeaderRenderer"`
+	} `json:"header"`
+	Contents []carouselItem `json:"contents"`
+}
+
+type carouselItem struct {
+	MusicTwoRowItemRenderer         *twoRowItem         `json:"musicTwoRowItemRenderer"`
+	MusicResponsiveListItemRenderer *responsiveListItem `json:"musicResponsiveListItemRenderer"`
+}
+
+type twoRowItem struct {
+	Title              *textRuns           `json:"title"`
+	Subtitle           *textRuns           `json:"subtitle"`
+	ThumbnailRenderer  *thumbnailHolder    `json:"thumbnailRenderer"`
+	NavigationEndpoint *navigationEndpoint `json:"navigationEndpoint"`
 }
 
 type editablePlaylistHeader struct {
@@ -1021,40 +1188,7 @@ func extractBrowseTracks(resp browseResponse, browseID string) []model.Track {
 }
 
 func extractBrowseDefaults(resp browseResponse, browseID string) browseDefaults {
-	var hdr *responsiveHeader
-	if resp.Header != nil {
-		switch {
-		case resp.Header.MusicResponsiveHeaderRenderer != nil:
-			hdr = resp.Header.MusicResponsiveHeaderRenderer
-		case resp.Header.MusicEditablePlaylistDetailHeaderRenderer != nil && resp.Header.MusicEditablePlaylistDetailHeaderRenderer.Header != nil:
-			hdr = resp.Header.MusicEditablePlaylistDetailHeaderRenderer.Header.MusicResponsiveHeaderRenderer
-		case resp.Header.MusicDetailHeaderRenderer != nil:
-			hdr = resp.Header.MusicDetailHeaderRenderer
-		}
-	}
-	if hdr == nil && resp.Contents.TwoColumnBrowseResultsRenderer != nil {
-		for _, tab := range resp.Contents.TwoColumnBrowseResultsRenderer.Tabs {
-			if tab.TabRenderer == nil || tab.TabRenderer.Content == nil || tab.TabRenderer.Content.SectionListRenderer == nil {
-				continue
-			}
-			for _, sec := range tab.TabRenderer.Content.SectionListRenderer.Contents {
-				switch {
-				case sec.MusicResponsiveHeaderRenderer != nil:
-					hdr = sec.MusicResponsiveHeaderRenderer
-				case sec.MusicEditablePlaylistDetailHdr != nil && sec.MusicEditablePlaylistDetailHdr.Header != nil:
-					hdr = sec.MusicEditablePlaylistDetailHdr.Header.MusicResponsiveHeaderRenderer
-				case sec.MusicDetailHeaderRenderer != nil:
-					hdr = sec.MusicDetailHeaderRenderer
-				}
-				if hdr != nil {
-					break
-				}
-			}
-			if hdr != nil {
-				break
-			}
-		}
-	}
+	hdr := findBrowseHeader(resp)
 	if hdr == nil {
 		return browseDefaults{}
 	}
@@ -1070,6 +1204,357 @@ func extractBrowseDefaults(resp browseResponse, browseID string) browseDefaults 
 	}
 	out.thumbs = extractThumbnails(hdr.Thumbnail)
 	return out
+}
+
+func findBrowseHeader(resp browseResponse) *responsiveHeader {
+	if resp.Header != nil {
+		switch {
+		case resp.Header.MusicResponsiveHeaderRenderer != nil:
+			return resp.Header.MusicResponsiveHeaderRenderer
+		case resp.Header.MusicEditablePlaylistDetailHeaderRenderer != nil && resp.Header.MusicEditablePlaylistDetailHeaderRenderer.Header != nil:
+			return resp.Header.MusicEditablePlaylistDetailHeaderRenderer.Header.MusicResponsiveHeaderRenderer
+		case resp.Header.MusicDetailHeaderRenderer != nil:
+			return resp.Header.MusicDetailHeaderRenderer
+		case resp.Header.MusicImmersiveHeaderRenderer != nil:
+			return resp.Header.MusicImmersiveHeaderRenderer
+		case resp.Header.MusicVisualHeaderRenderer != nil:
+			return resp.Header.MusicVisualHeaderRenderer
+		}
+	}
+	if resp.Contents.TwoColumnBrowseResultsRenderer != nil {
+		for _, tab := range resp.Contents.TwoColumnBrowseResultsRenderer.Tabs {
+			if tab.TabRenderer == nil || tab.TabRenderer.Content == nil || tab.TabRenderer.Content.SectionListRenderer == nil {
+				continue
+			}
+			for _, sec := range tab.TabRenderer.Content.SectionListRenderer.Contents {
+				switch {
+				case sec.MusicResponsiveHeaderRenderer != nil:
+					return sec.MusicResponsiveHeaderRenderer
+				case sec.MusicEditablePlaylistDetailHdr != nil && sec.MusicEditablePlaylistDetailHdr.Header != nil:
+					return sec.MusicEditablePlaylistDetailHdr.Header.MusicResponsiveHeaderRenderer
+				case sec.MusicDetailHeaderRenderer != nil:
+					return sec.MusicDetailHeaderRenderer
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func extractSearchCollections(resp searchResponse, tab catalog.SearchTab, limit int) []catalog.Collection {
+	var sections []sectionItem
+	if resp.Contents.TabbedSearchResultsRenderer != nil {
+		for _, t := range resp.Contents.TabbedSearchResultsRenderer.Tabs {
+			if t.TabRenderer == nil || t.TabRenderer.Content == nil || t.TabRenderer.Content.SectionListRenderer == nil {
+				continue
+			}
+			sections = append(sections, t.TabRenderer.Content.SectionListRenderer.Contents...)
+		}
+	}
+	if resp.Contents.SectionListRenderer != nil {
+		sections = append(sections, resp.Contents.SectionListRenderer.Contents...)
+	}
+
+	items := make([]catalog.Collection, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	addCol := func(c catalog.Collection, ok bool) bool {
+		if !ok || c.ID == "" {
+			return false
+		}
+		if _, dup := seen[c.ID]; dup {
+			return false
+		}
+		seen[c.ID] = struct{}{}
+		items = append(items, c)
+		return limit > 0 && len(items) >= limit
+	}
+
+	for _, sec := range sections {
+		if sec.MusicCardShelfRenderer != nil {
+			if addCol(cardToCollection(sec.MusicCardShelfRenderer, tab)) {
+				return items
+			}
+			for _, item := range sec.MusicCardShelfRenderer.Contents {
+				if item.MusicResponsiveListItemRenderer != nil {
+					if addCol(listItemToCollection(item.MusicResponsiveListItemRenderer, tab)) {
+						return items
+					}
+				}
+			}
+		}
+		if sec.MusicShelfRenderer != nil {
+			for _, item := range sec.MusicShelfRenderer.Contents {
+				if item.MusicResponsiveListItemRenderer != nil {
+					if addCol(listItemToCollection(item.MusicResponsiveListItemRenderer, tab)) {
+						return items
+					}
+				}
+			}
+		}
+		if sec.MusicResponsiveListItemRenderer != nil {
+			if addCol(listItemToCollection(sec.MusicResponsiveListItemRenderer, tab)) {
+				return items
+			}
+		}
+		if sec.ItemSectionRenderer != nil {
+			for _, sub := range sec.ItemSectionRenderer.Contents {
+				if sub.MusicResponsiveListItemRenderer != nil {
+					if addCol(listItemToCollection(sub.MusicResponsiveListItemRenderer, tab)) {
+						return items
+					}
+				}
+				if sub.MusicShelfRenderer != nil {
+					for _, item := range sub.MusicShelfRenderer.Contents {
+						if item.MusicResponsiveListItemRenderer != nil {
+							if addCol(listItemToCollection(item.MusicResponsiveListItemRenderer, tab)) {
+								return items
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return items
+}
+
+func extractArtistDetail(resp browseResponse, col catalog.Collection) catalog.CollectionDetail {
+	updated := col
+	updated.Kind = catalog.CollectionArtist
+	if hdr := findBrowseHeader(resp); hdr != nil {
+		if t := joinRunsText(hdr.Title); t != "" {
+			updated.Title = t
+		}
+		if sub := joinRunsText(hdr.Subtitle); sub != "" && updated.Subtitle == "" {
+			updated.Subtitle = sub
+		}
+		if u := pickBestThumbnailURL(extractThumbnails(hdr.Thumbnail)); u != "" && updated.ThumbnailURL == "" {
+			updated.ThumbnailURL = u
+		}
+	}
+
+	var sections []sectionItem
+	collectSections := func(sl *sectionListRenderer) {
+		if sl != nil {
+			sections = append(sections, sl.Contents...)
+		}
+	}
+	if resp.Contents.SingleColumnBrowseResultsRenderer != nil {
+		for _, t := range resp.Contents.SingleColumnBrowseResultsRenderer.Tabs {
+			if t.TabRenderer != nil && t.TabRenderer.Content != nil {
+				collectSections(t.TabRenderer.Content.SectionListRenderer)
+			}
+		}
+	}
+	if resp.Contents.TwoColumnBrowseResultsRenderer != nil {
+		if resp.Contents.TwoColumnBrowseResultsRenderer.SecondaryContents != nil {
+			collectSections(resp.Contents.TwoColumnBrowseResultsRenderer.SecondaryContents.SectionListRenderer)
+		}
+		for _, t := range resp.Contents.TwoColumnBrowseResultsRenderer.Tabs {
+			if t.TabRenderer != nil && t.TabRenderer.Content != nil {
+				collectSections(t.TabRenderer.Content.SectionListRenderer)
+			}
+		}
+	}
+
+	var tracks []model.Track
+	var albums []catalog.Collection
+	seenTracks := make(map[string]struct{})
+	seenAlbums := make(map[string]struct{})
+
+	for _, sec := range sections {
+		if sec.MusicShelfRenderer != nil {
+			for _, item := range sec.MusicShelfRenderer.Contents {
+				if item.MusicResponsiveListItemRenderer == nil {
+					continue
+				}
+				if tr, ok := listItemToTrack(item.MusicResponsiveListItemRenderer, nil); ok {
+					if _, dup := seenTracks[tr.ID]; !dup {
+						seenTracks[tr.ID] = struct{}{}
+						if tr.Artist == "" && updated.Title != "" {
+							tr.Artist = updated.Title
+						}
+						tracks = append(tracks, tr)
+					}
+				}
+			}
+		}
+		if sec.MusicCarouselShelfRenderer != nil {
+			for _, item := range sec.MusicCarouselShelfRenderer.Contents {
+				if item.MusicTwoRowItemRenderer != nil {
+					if al, ok := twoRowToCollection(item.MusicTwoRowItemRenderer); ok {
+						if _, dup := seenAlbums[al.ID]; !dup {
+							seenAlbums[al.ID] = struct{}{}
+							albums = append(albums, al)
+						}
+					}
+				} else if item.MusicResponsiveListItemRenderer != nil {
+					if tr, ok := listItemToTrack(item.MusicResponsiveListItemRenderer, nil); ok {
+						if _, dup := seenTracks[tr.ID]; !dup {
+							seenTracks[tr.ID] = struct{}{}
+							tracks = append(tracks, tr)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return catalog.CollectionDetail{
+		Collection: updated,
+		Tracks:     tracks,
+		Albums:     albums,
+	}
+}
+
+func cardToCollection(card *musicCardShelfRenderer, tab catalog.SearchTab) (catalog.Collection, bool) {
+	if card == nil || card.OnTap == nil || card.OnTap.BrowseEndpoint == nil {
+		return catalog.Collection{}, false
+	}
+	browseID := strings.TrimSpace(card.OnTap.BrowseEndpoint.BrowseID)
+	if browseID == "" {
+		return catalog.Collection{}, false
+	}
+	pageType := ""
+	if card.OnTap.BrowseEndpoint.BrowseEndpointContextSupportedConfigs != nil &&
+		card.OnTap.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig != nil {
+		pageType = card.OnTap.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.PageType
+	}
+	kind, ok := collectionKindFor(tab, pageType, browseID)
+	if !ok {
+		return catalog.Collection{}, false
+	}
+	title := joinRunsText(card.Title)
+	if title == "" {
+		title = browseID
+	}
+	return catalog.Collection{
+		ID:           browseID,
+		Kind:         kind,
+		Title:        title,
+		Subtitle:     joinRunsText(card.Subtitle),
+		ThumbnailURL: pickBestThumbnailURL(extractThumbnails(card.Thumbnail)),
+	}, true
+}
+
+func listItemToCollection(item *responsiveListItem, tab catalog.SearchTab) (catalog.Collection, bool) {
+	if item == nil {
+		return catalog.Collection{}, false
+	}
+	browseID, pageType := extractListItemBrowse(item)
+	if browseID == "" {
+		return catalog.Collection{}, false
+	}
+	kind, ok := collectionKindFor(tab, pageType, browseID)
+	if !ok {
+		return catalog.Collection{}, false
+	}
+	var title string
+	if len(item.FlexColumns) > 0 && item.FlexColumns[0].MusicResponsiveListItemFlexColumnRenderer != nil {
+		title = joinRunsText(item.FlexColumns[0].MusicResponsiveListItemFlexColumnRenderer.Text)
+	}
+	if title == "" {
+		title = browseID
+	}
+	var subParts []string
+	for i := 1; i < len(item.FlexColumns); i++ {
+		col := item.FlexColumns[i].MusicResponsiveListItemFlexColumnRenderer
+		if col == nil {
+			continue
+		}
+		if s := joinRunsText(col.Text); s != "" {
+			subParts = append(subParts, s)
+		}
+	}
+	return catalog.Collection{
+		ID:           browseID,
+		Kind:         kind,
+		Title:        title,
+		Subtitle:     strings.Join(subParts, " • "),
+		ThumbnailURL: pickBestThumbnailURL(extractThumbnails(item.Thumbnail)),
+	}, true
+}
+
+func twoRowToCollection(item *twoRowItem) (catalog.Collection, bool) {
+	if item == nil || item.NavigationEndpoint == nil || item.NavigationEndpoint.BrowseEndpoint == nil {
+		return catalog.Collection{}, false
+	}
+	be := item.NavigationEndpoint.BrowseEndpoint
+	browseID := strings.TrimSpace(be.BrowseID)
+	if browseID == "" {
+		return catalog.Collection{}, false
+	}
+	pageType := ""
+	if be.BrowseEndpointContextSupportedConfigs != nil &&
+		be.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig != nil {
+		pageType = be.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.PageType
+	}
+	kind, ok := collectionKindFor("", pageType, browseID)
+	if !ok {
+		return catalog.Collection{}, false
+	}
+	title := joinRunsText(item.Title)
+	if title == "" {
+		title = browseID
+	}
+	return catalog.Collection{
+		ID:           browseID,
+		Kind:         kind,
+		Title:        title,
+		Subtitle:     joinRunsText(item.Subtitle),
+		ThumbnailURL: pickBestThumbnailURL(extractThumbnails(item.ThumbnailRenderer)),
+	}, true
+}
+
+func extractListItemBrowse(item *responsiveListItem) (browseID, pageType string) {
+	if item.NavigationEndpoint != nil && item.NavigationEndpoint.BrowseEndpoint != nil {
+		be := item.NavigationEndpoint.BrowseEndpoint
+		if be.BrowseEndpointContextSupportedConfigs != nil &&
+			be.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig != nil {
+			pageType = be.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.PageType
+		}
+		return strings.TrimSpace(be.BrowseID), pageType
+	}
+	for _, col := range item.FlexColumns {
+		if col.MusicResponsiveListItemFlexColumnRenderer == nil || col.MusicResponsiveListItemFlexColumnRenderer.Text == nil {
+			continue
+		}
+		for _, r := range col.MusicResponsiveListItemFlexColumnRenderer.Text.Runs {
+			pt, bid := runBrowseTarget(r)
+			if bid != "" {
+				return strings.TrimSpace(bid), pt
+			}
+		}
+	}
+	return "", ""
+}
+
+func collectionKindFor(tab catalog.SearchTab, pageType, browseID string) (catalog.CollectionKind, bool) {
+	switch pageType {
+	case "MUSIC_PAGE_TYPE_PLAYLIST":
+		return catalog.CollectionPlaylist, true
+	case "MUSIC_PAGE_TYPE_ALBUM":
+		return catalog.CollectionAlbum, true
+	case "MUSIC_PAGE_TYPE_ARTIST", "MUSIC_PAGE_TYPE_USER_CHANNEL":
+		return catalog.CollectionArtist, true
+	}
+	switch {
+	case strings.HasPrefix(browseID, "MPREb_"):
+		return catalog.CollectionAlbum, true
+	case strings.HasPrefix(browseID, "UC"):
+		return catalog.CollectionArtist, true
+	case strings.HasPrefix(browseID, "VL"), strings.HasPrefix(browseID, "PL"), strings.HasPrefix(browseID, "RD"):
+		return catalog.CollectionPlaylist, true
+	}
+	switch tab {
+	case catalog.TabPlaylists:
+		return catalog.CollectionPlaylist, true
+	case catalog.TabAlbums:
+		return catalog.CollectionAlbum, true
+	case catalog.TabArtists:
+		return catalog.CollectionArtist, true
+	}
+	return "", false
 }
 
 func cardToTrack(card *musicCardShelfRenderer) (model.Track, bool) {

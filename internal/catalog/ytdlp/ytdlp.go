@@ -389,6 +389,92 @@ func (c *Client) Playlist(ctx context.Context, idOrURL string) ([]model.Track, e
 	return tracks, nil
 }
 
+// SupportedTabs reports that the yt-dlp fallback supports Songs and Playlists
+// (Albums and Artists require the InnerTube ytmusic backend).
+func (c *Client) SupportedTabs() []catalog.SearchTab {
+	return []catalog.SearchTab{catalog.TabSongs, catalog.TabPlaylists}
+}
+
+// SearchCollections searches YouTube playlists via yt-dlp when tab == TabPlaylists.
+func (c *Client) SearchCollections(ctx context.Context, tab catalog.SearchTab, query string, limit int) ([]catalog.Collection, error) {
+	if tab != catalog.TabPlaylists {
+		return nil, fmt.Errorf("ytdlp catalog does not support %s search", tab)
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, catalog.ErrEmptyQuery
+	}
+	if limit <= 0 {
+		limit = DefaultSearchLimit
+	} else if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
+	}
+
+	searchURL := "https://www.youtube.com/results?search_query=" + url.QueryEscape(query) + "&sp=EgIQAw%3D%3D"
+	args := []string{
+		"-J",
+		"--no-warnings",
+		"--flat-playlist",
+		"--playlist-end", strconv.Itoa(limit),
+		searchURL,
+	}
+
+	stdout, stderr, err := c.runner.Output(ctx, c.currentBinary(), args...)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, ytdlpError("playlist search", query, err, stderr)
+	}
+
+	var env ytdlpEnvelope
+	if err := json.Unmarshal(stdout, &env); err != nil {
+		return nil, fmt.Errorf("decoding yt-dlp playlist search output for %q: %w", query, err)
+	}
+
+	out := make([]catalog.Collection, 0, len(env.Entries))
+	for _, entry := range env.Entries {
+		if entry == nil {
+			continue
+		}
+		id := strings.TrimSpace(entry.ID)
+		if id == "" {
+			id = strings.TrimSpace(entry.URL)
+		}
+		if id == "" {
+			continue
+		}
+		title := strings.TrimSpace(entry.Title)
+		if title == "" {
+			title = id
+		}
+		sub := firstNonEmpty(entry.Channel, entry.Uploader, entry.Creator)
+		out = append(out, catalog.Collection{
+			ID:           id,
+			Kind:         catalog.CollectionPlaylist,
+			Title:        title,
+			Subtitle:     sub,
+			ThumbnailURL: pickThumbnail(entry.Thumbnails, entry.Thumbnail, id),
+		})
+	}
+	return out, nil
+}
+
+// BrowseCollection expands a playlist collection via Playlist.
+func (c *Client) BrowseCollection(ctx context.Context, col catalog.Collection) (catalog.CollectionDetail, error) {
+	if col.Kind != catalog.CollectionPlaylist {
+		return catalog.CollectionDetail{}, fmt.Errorf("ytdlp catalog does not support browsing %s", col.Kind)
+	}
+	tracks, err := c.Playlist(ctx, col.ID)
+	if err != nil {
+		return catalog.CollectionDetail{}, err
+	}
+	return catalog.CollectionDetail{
+		Collection: col,
+		Tracks:     tracks,
+	}, nil
+}
+
 func (c *Client) extractEntries(entries []*ytdlpEntry) []model.Track {
 	tracks := make([]model.Track, 0, len(entries))
 	for _, entry := range entries {

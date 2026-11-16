@@ -198,6 +198,40 @@ func TestPlaylistExtractionAndArgs(t *testing.T) {
 	}
 }
 
+func TestTabCatalogPlaylistsSupport(t *testing.T) {
+	plSearchJSON := []byte(`{"entries":[{"id":"PLabc1234567890","title":"Synthwave Mix","channel":"Synth Channel"}]}`)
+	plTracksJSON := readFixture(t, "playlist.json")
+
+	runner := &fakeRunner{fn: func(call int) ([]byte, []byte, error) {
+		if call == 1 {
+			return plSearchJSON, nil, nil
+		}
+		return plTracksJSON, nil, nil
+	}}
+	client := New(WithRunner(runner))
+	tabs := client.SupportedTabs()
+	if !reflect.DeepEqual(tabs, []catalog.SearchTab{catalog.TabSongs, catalog.TabPlaylists}) {
+		t.Fatalf("SupportedTabs = %v, want [songs playlists]", tabs)
+	}
+
+	cols, err := client.SearchCollections(context.Background(), catalog.TabPlaylists, "synthwave", 5)
+	if err != nil {
+		t.Fatalf("SearchCollections = %v", err)
+	}
+	if len(cols) != 1 || cols[0].ID != "PLabc1234567890" || cols[0].Kind != catalog.CollectionPlaylist || cols[0].Subtitle != "Synth Channel" {
+		t.Fatalf("cols = %+v", cols)
+	}
+
+	detail, err := client.BrowseCollection(context.Background(), cols[0])
+	if err != nil || len(detail.Tracks) != 2 {
+		t.Fatalf("BrowseCollection = %+v, err=%v", detail, err)
+	}
+
+	if _, err := client.SearchCollections(context.Background(), catalog.TabAlbums, "x", 5); err == nil {
+		t.Fatal("ytdlp SearchCollections(albums) succeeded, want unsupported error")
+	}
+}
+
 func TestEmptyQueryReturnsErrEmptyQuery(t *testing.T) {
 	client := New(WithRunner(&fakeRunner{}))
 

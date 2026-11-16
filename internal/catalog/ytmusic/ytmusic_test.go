@@ -447,6 +447,182 @@ func TestMaxResponseBytesEnforced(t *testing.T) {
 	}
 }
 
+func TestSearchCollectionsAndBrowseArtistAlbum(t *testing.T) {
+	albumSearchJSON := []byte(`{
+		"contents": {
+			"tabbedSearchResultsRenderer": {
+				"tabs": [{
+					"tabRenderer": {
+						"content": {
+							"sectionListRenderer": {
+								"contents": [{
+									"musicShelfRenderer": {
+										"contents": [{
+											"musicResponsiveListItemRenderer": {
+												"navigationEndpoint": {
+													"browseEndpoint": {
+														"browseId": "MPREb_K8qWMWVqXGi",
+														"browseEndpointContextSupportedConfigs": {
+															"browseEndpointContextMusicConfig": {
+																"pageType": "MUSIC_PAGE_TYPE_ALBUM"
+															}
+														}
+													}
+												},
+												"flexColumns": [
+													{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Discovery"}]}}},
+													{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Album • Daft Punk • 2001"}]}}}
+												],
+												"thumbnail": {
+													"musicThumbnailRenderer": {
+														"thumbnail": {"thumbnails": [{"url": "https://example.com/alb.jpg", "width": 360, "height": 360}]}
+													}
+												}
+											}
+										}]
+									}
+								}]
+							}
+						}
+					}
+				}]
+			}
+		}
+	}`)
+
+	artistBrowseJSON := []byte(`{
+		"header": {
+			"musicImmersiveHeaderRenderer": {
+				"title": {"runs": [{"text": "Daft Punk"}]},
+				"thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [{"url": "https://example.com/art.jpg", "width": 360, "height": 360}]}}}
+			}
+		},
+		"contents": {
+			"singleColumnBrowseResultsRenderer": {
+				"tabs": [{
+					"tabRenderer": {
+						"content": {
+							"sectionListRenderer": {
+								"contents": [
+									{
+										"musicShelfRenderer": {
+											"contents": [{
+												"musicResponsiveListItemRenderer": {
+													"playlistItemData": {"videoId": "FGBhQbmPwH8"},
+													"flexColumns": [
+														{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "One More Time"}]}}},
+														{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+															{"text": "Discovery", "navigationEndpoint": {"browseEndpoint": {"browseId": "MPREb_123", "browseEndpointContextSupportedConfigs": {"browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}}}}},
+															{"text": " • 5:20"}
+														]}}}
+													]
+												}
+											}]
+										}
+									},
+									{
+										"musicCarouselShelfRenderer": {
+											"contents": [{
+												"musicTwoRowItemRenderer": {
+													"title": {"runs": [{"text": "Homework"}]},
+													"subtitle": {"runs": [{"text": "Album • 1997"}]},
+													"navigationEndpoint": {
+														"browseEndpoint": {
+															"browseId": "MPREb_homework",
+															"browseEndpointContextSupportedConfigs": {
+																"browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}
+															}
+														}
+													}
+												}
+											}]
+										}
+									}
+								]
+							}
+						}
+					}
+				}]
+			}
+		}
+	}`)
+
+	browseFixture := readFixture(t, "playlist_browse.json")
+	srv, reqs, mu := newTestServer(t, func(endpoint string, req innerTubeRequest) (int, []byte) {
+		switch endpoint {
+		case "/search":
+			return http.StatusOK, albumSearchJSON
+		case "/browse":
+			if req.BrowseID == "UCdaftpunk123" {
+				return http.StatusOK, artistBrowseJSON
+			}
+			return http.StatusOK, browseFixture
+		default:
+			return http.StatusNotFound, nil
+		}
+	})
+
+	client := New(WithBaseURL(srv.URL))
+
+	tabs := client.SupportedTabs()
+	if len(tabs) != 4 {
+		t.Fatalf("SupportedTabs = %v, want 4 tabs", tabs)
+	}
+
+	cols, err := client.SearchCollections(context.Background(), catalog.TabAlbums, "discovery", 10)
+	if err != nil {
+		t.Fatalf("SearchCollections(albums) = %v", err)
+	}
+	if len(cols) != 1 || cols[0].ID != "MPREb_K8qWMWVqXGi" || cols[0].Kind != catalog.CollectionAlbum || cols[0].Title != "Discovery" {
+		t.Fatalf("albums = %+v", cols)
+	}
+	mu.Lock()
+	if (*reqs)[0].body.Params != albumsSearchParams {
+		mu.Unlock()
+		t.Fatalf("album search params = %q, want %q", (*reqs)[0].body.Params, albumsSearchParams)
+	}
+	mu.Unlock()
+
+	// Second call hits collectionCache.
+	cols2, err := client.SearchCollections(context.Background(), catalog.TabAlbums, "discovery", 10)
+	if err != nil || len(cols2) != 1 {
+		t.Fatalf("cached SearchCollections = %+v, err=%v", cols2, err)
+	}
+	mu.Lock()
+	if len(*reqs) != 1 {
+		mu.Unlock()
+		t.Fatalf("requests = %d, want 1 (cached)", len(*reqs))
+	}
+	mu.Unlock()
+
+	// Browse Artist returns top tracks and discography albums.
+	artistDetail, err := client.BrowseCollection(context.Background(), catalog.Collection{
+		ID:   "UCdaftpunk123",
+		Kind: catalog.CollectionArtist,
+	})
+	if err != nil {
+		t.Fatalf("BrowseCollection(artist) = %v", err)
+	}
+	if artistDetail.Collection.Title != "Daft Punk" {
+		t.Fatalf("artist title = %q, want Daft Punk", artistDetail.Collection.Title)
+	}
+	if len(artistDetail.Tracks) != 1 || artistDetail.Tracks[0].ID != "FGBhQbmPwH8" || artistDetail.Tracks[0].Artist != "Daft Punk" {
+		t.Fatalf("artist tracks = %+v", artistDetail.Tracks)
+	}
+	if len(artistDetail.Albums) != 1 || artistDetail.Albums[0].ID != "MPREb_homework" || artistDetail.Albums[0].Kind != catalog.CollectionAlbum {
+		t.Fatalf("artist albums = %+v", artistDetail.Albums)
+	}
+
+	// Browse Playlist/Album uses browse tracks.
+	plDetail, err := client.BrowseCollection(context.Background(), catalog.Collection{
+		ID:   "PL1234567890abcdef",
+		Kind: catalog.CollectionPlaylist,
+	})
+	if err != nil || len(plDetail.Tracks) == 0 {
+		t.Fatalf("BrowseCollection(playlist) = %+v, err=%v", plDetail, err)
+	}
+}
+
 func TestLiveCatalogSearchAndTrack(t *testing.T) {
 	if os.Getenv("YTM_LIVE") != "1" && os.Getenv("YTM_WMP_LIVE_TEST") != "1" {
 		t.Skip("set YTM_LIVE=1 to run live InnerTube catalog test")

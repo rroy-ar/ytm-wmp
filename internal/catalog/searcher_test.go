@@ -393,3 +393,66 @@ func TestParseSearchTargetAndYouTubePrefixRouting(t *testing.T) {
 		t.Fatalf("primary searches = %v, want [normal song]", got)
 	}
 }
+
+type fakeTabCatalog struct {
+	fakeCatalog
+	collections []Collection
+	detail      CollectionDetail
+}
+
+func (f *fakeTabCatalog) SupportedTabs() []SearchTab {
+	return []SearchTab{TabSongs, TabPlaylists, TabAlbums, TabArtists}
+}
+
+func (f *fakeTabCatalog) SearchCollections(_ context.Context, tab SearchTab, query string, _ int) ([]Collection, error) {
+	if len(f.collections) > 0 {
+		return f.collections, nil
+	}
+	return []Collection{{ID: "col-" + string(tab), Kind: CollectionAlbum, Title: query}}, nil
+}
+
+func (f *fakeTabCatalog) BrowseCollection(_ context.Context, col Collection) (CollectionDetail, error) {
+	if f.detail.Collection.ID != "" {
+		return f.detail, nil
+	}
+	return CollectionDetail{
+		Collection: col,
+		Tracks:     []model.Track{{ID: "detail-1", Title: "Inside " + col.Title}},
+	}, nil
+}
+
+func TestSearcherTabsAndBrowse(t *testing.T) {
+	plain := &fakeCatalog{}
+	if !SupportsTab(plain, TabSongs) || SupportsTab(plain, TabAlbums) {
+		t.Fatalf("SupportsTab on plain catalog mismatch")
+	}
+
+	tabCat := &fakeTabCatalog{}
+	if !SupportsTab(tabCat, TabAlbums) || !SupportsTab(tabCat, TabArtists) || !SupportsTab(tabCat, TabPlaylists) {
+		t.Fatalf("SupportsTab on TabCatalog returned false")
+	}
+
+	s := NewSearcher(tabCat, WithDebounce(0))
+	defer s.Close()
+
+	s.SubmitForTab("discovery", TabAlbums)
+	select {
+	case res := <-s.Results():
+		if res.Err != nil || res.Tab != TabAlbums || len(res.Collections) != 1 || res.Collections[0].Title != "discovery" {
+			t.Fatalf("album tab result = %+v", res)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for album tab search")
+	}
+
+	col := Collection{ID: "MPREb_123", Kind: CollectionAlbum, Title: "Discovery"}
+	s.Browse(col)
+	select {
+	case res := <-s.Results():
+		if res.Err != nil || res.Detail == nil || len(res.Detail.Tracks) != 1 || res.Detail.Tracks[0].ID != "detail-1" {
+			t.Fatalf("browse result = %+v", res)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for browse detail")
+	}
+}

@@ -17,14 +17,18 @@ const (
 	DefaultSearchLimit = 10
 )
 
-// SearchResult is the outcome of a single search or playlist import generation.
+// SearchResult is the outcome of a single search, playlist import, or
+// collection browse generation.
 type SearchResult struct {
-	Generation uint64
-	Query      string
-	Tracks     []model.Track
-	IsPlaylist bool
-	IsYouTube  bool
-	Err        error
+	Generation  uint64
+	Tab         SearchTab
+	Query       string
+	Tracks      []model.Track
+	Collections []Collection
+	Detail      *CollectionDetail
+	IsPlaylist  bool
+	IsYouTube   bool
+	Err         error
 }
 
 // SearcherOption configures a Searcher.
@@ -94,9 +98,18 @@ func (s *Searcher) Results() <-chan SearchResult {
 	return s.results
 }
 
-// SetQuery schedules a debounced search (or clears results if query is empty)
-// and cancels any previous pending timer or in-flight search.
+// SetQuery schedules a debounced song search (or clears results if query is
+// empty) and cancels any previous pending timer or in-flight search.
 func (s *Searcher) SetQuery(query string) uint64 {
+	return s.SetQueryForTab(query, TabSongs)
+}
+
+// SetQueryForTab schedules a debounced search for tab (or clears results if
+// query is empty) and cancels any previous pending timer or in-flight search.
+func (s *Searcher) SetQueryForTab(query string, tab SearchTab) uint64 {
+	if tab == "" {
+		tab = TabSongs
+	}
 	q := strings.TrimSpace(query)
 
 	s.mu.Lock()
@@ -110,7 +123,7 @@ func (s *Searcher) SetQuery(query string) uint64 {
 
 	if q == "" {
 		s.mu.Unlock()
-		s.emit(SearchResult{Generation: gen, Query: ""})
+		s.emit(SearchResult{Generation: gen, Tab: tab, Query: ""})
 		return gen
 	}
 	if s.cat == nil {
@@ -118,21 +131,30 @@ func (s *Searcher) SetQuery(query string) uint64 {
 		return gen
 	}
 	if s.debounce == 0 {
-		s.startWorkerLocked(gen, q)
+		s.startWorkerLocked(gen, q, tab)
 		s.mu.Unlock()
 		return gen
 	}
 
 	s.timer = time.AfterFunc(s.debounce, func() {
-		s.onTimer(gen, q)
+		s.onTimer(gen, q, tab)
 	})
 	s.mu.Unlock()
 	return gen
 }
 
-// Submit cancels any pending timer or in-flight search and starts a new
+// Submit cancels any pending timer or in-flight search and starts a song
 // lookup immediately without waiting for the debounce window.
 func (s *Searcher) Submit(query string) uint64 {
+	return s.SubmitForTab(query, TabSongs)
+}
+
+// SubmitForTab cancels any pending timer or in-flight search and starts a
+// lookup for tab immediately without waiting for the debounce window.
+func (s *Searcher) SubmitForTab(query string, tab SearchTab) uint64 {
+	if tab == "" {
+		tab = TabSongs
+	}
 	q := strings.TrimSpace(query)
 
 	s.mu.Lock()
@@ -146,15 +168,39 @@ func (s *Searcher) Submit(query string) uint64 {
 
 	if q == "" {
 		s.mu.Unlock()
-		s.emit(SearchResult{Generation: gen, Query: ""})
+		s.emit(SearchResult{Generation: gen, Tab: tab, Query: ""})
 		return gen
 	}
 	if s.cat == nil {
 		s.mu.Unlock()
 		return gen
 	}
-	s.startWorkerLocked(gen, q)
+	s.startWorkerLocked(gen, q, tab)
 	s.mu.Unlock()
+	return gen
+}
+
+// Browse opens a Collection (playlist, album, or artist) asynchronously under a
+// new generation tag.
+func (s *Searcher) Browse(col Collection) uint64 {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return 0
+	}
+	s.stopPendingLocked()
+	s.gen++
+	gen := s.gen
+	if s.cat == nil {
+		s.mu.Unlock()
+		return gen
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	s.wg.Add(1)
+	s.mu.Unlock()
+
+	go s.runBrowseWorker(ctx, cancel, gen, col)
 	return gen
 }
 
@@ -196,22 +242,22 @@ func (s *Searcher) stopPendingLocked() {
 	}
 }
 
-func (s *Searcher) onTimer(gen uint64, q string) {
+func (s *Searcher) onTimer(gen uint64, q string, tab SearchTab) {
 	s.mu.Lock()
 	if s.closed || gen != s.gen {
 		s.mu.Unlock()
 		return
 	}
 	s.timer = nil
-	s.startWorkerLocked(gen, q)
+	s.startWorkerLocked(gen, q, tab)
 	s.mu.Unlock()
 }
 
-func (s *Searcher) startWorkerLocked(gen uint64, q string) {
+func (s *Searcher) startWorkerLocked(gen uint64, q string, tab SearchTab) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.wg.Add(1)
-	go s.runWorker(ctx, cancel, gen, q)
+	go s.runWorker(ctx, cancel, gen, q, tab)
 }
 
 // ParseSearchTarget splits an optional `yt:` or `ytdlp:` prefix from rawQuery,
@@ -230,7 +276,7 @@ func ParseSearchTarget(rawQuery string) (target string, isYouTube bool) {
 	}
 }
 
-func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen uint64, q string) {
+func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen uint64, q string, tab SearchTab) {
 	defer s.wg.Done()
 	defer cancel()
 
@@ -240,7 +286,7 @@ func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen
 		stale := s.closed || gen != s.gen
 		s.mu.Unlock()
 		if !stale {
-			s.emit(SearchResult{Generation: gen, Query: ""})
+			s.emit(SearchResult{Generation: gen, Tab: tab, Query: ""})
 		}
 		return
 	}
@@ -252,8 +298,9 @@ func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen
 
 	isPlaylist := IsPlaylistTarget(target)
 	var (
-		tracks []model.Track
-		err    error
+		tracks      []model.Track
+		collections []Collection
+		err         error
 	)
 	if isPlaylist {
 		tracks, err = activeCat.Playlist(ctx, target)
@@ -265,6 +312,12 @@ func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen
 			return
 		} else {
 			tracks, err = activeCat.Search(ctx, vid, s.limit)
+		}
+	} else if tab != "" && tab != TabSongs {
+		if tc, ok := activeCat.(TabCatalog); ok && SupportsTab(activeCat, tab) {
+			collections, err = tc.SearchCollections(ctx, tab, target, s.limit)
+		} else {
+			err = errors.New("tab not supported by this catalog backend")
 		}
 	} else {
 		tracks, err = activeCat.Search(ctx, target, s.limit)
@@ -282,13 +335,79 @@ func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen
 	}
 
 	s.emit(SearchResult{
+		Generation:  gen,
+		Tab:         tab,
+		Query:       q,
+		Tracks:      tracks,
+		Collections: collections,
+		IsPlaylist:  isPlaylist,
+		IsYouTube:   isYouTube,
+		Err:         err,
+	})
+}
+
+func (s *Searcher) runBrowseWorker(ctx context.Context, cancel context.CancelFunc, gen uint64, col Collection) {
+	defer s.wg.Done()
+	defer cancel()
+
+	var (
+		detail CollectionDetail
+		err    error
+	)
+	if tc, ok := s.cat.(TabCatalog); ok {
+		detail, err = tc.BrowseCollection(ctx, col)
+	} else if col.Kind == CollectionPlaylist {
+		var tracks []model.Track
+		tracks, err = s.cat.Playlist(ctx, col.ID)
+		detail = CollectionDetail{Collection: col, Tracks: tracks}
+	} else {
+		err = errors.New("browsing collections is not supported by this catalog backend")
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+
+	s.mu.Lock()
+	stale := s.closed || gen != s.gen
+	s.mu.Unlock()
+	if stale {
+		return
+	}
+
+	var tab SearchTab
+	switch col.Kind {
+	case CollectionPlaylist:
+		tab = TabPlaylists
+	case CollectionAlbum:
+		tab = TabAlbums
+	case CollectionArtist:
+		tab = TabArtists
+	}
+
+	s.emit(SearchResult{
 		Generation: gen,
-		Query:      q,
-		Tracks:     tracks,
-		IsPlaylist: isPlaylist,
-		IsYouTube:  isYouTube,
+		Tab:        tab,
+		Detail:     &detail,
 		Err:        err,
 	})
+}
+
+// SupportsTab reports whether cat supports searching tab.
+func SupportsTab(cat Catalog, tab SearchTab) bool {
+	if tab == "" || tab == TabSongs {
+		return cat != nil
+	}
+	tc, ok := cat.(TabCatalog)
+	if !ok {
+		return false
+	}
+	for _, supported := range tc.SupportedTabs() {
+		if supported == tab {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Searcher) emit(res SearchResult) {

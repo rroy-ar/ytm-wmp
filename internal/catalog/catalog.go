@@ -34,6 +34,51 @@ type RadioProvider interface {
 	Related(ctx context.Context, trackID string) ([]model.Track, error)
 }
 
+// SearchTab selects which catalog entity kind a browser search targets.
+type SearchTab string
+
+const (
+	TabSongs     SearchTab = "songs"
+	TabPlaylists SearchTab = "playlists"
+	TabAlbums    SearchTab = "albums"
+	TabArtists   SearchTab = "artists"
+)
+
+// CollectionKind identifies a browsable non-track catalog entity.
+type CollectionKind string
+
+const (
+	CollectionPlaylist CollectionKind = "playlist"
+	CollectionAlbum    CollectionKind = "album"
+	CollectionArtist   CollectionKind = "artist"
+)
+
+// Collection represents a playlist, album, or artist entry returned by tab
+// search or artist discography shelves.
+type Collection struct {
+	ID           string
+	Kind         CollectionKind
+	Title        string
+	Subtitle     string
+	ThumbnailURL string
+}
+
+// CollectionDetail contains the tracks (and optional albums for an artist)
+// returned when opening a Collection.
+type CollectionDetail struct {
+	Collection Collection
+	Tracks     []model.Track
+	Albums     []Collection
+}
+
+// TabCatalog is an optional capability implemented by Catalog backends that
+// support searching and browsing playlists, albums, and/or artists.
+type TabCatalog interface {
+	SupportedTabs() []SearchTab
+	SearchCollections(ctx context.Context, tab SearchTab, query string, limit int) ([]Collection, error)
+	BrowseCollection(ctx context.Context, col Collection) (CollectionDetail, error)
+}
+
 // IsPlaylistTarget reports whether input looks like a YouTube/YouTube Music
 // playlist URL or bare playlist ID rather than a single-track target or search
 // query.

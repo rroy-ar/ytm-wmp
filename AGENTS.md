@@ -6,13 +6,14 @@ Guidelines for coding agents working in `ytm-wmp`.
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-query`, `-playlist`, `-debug`), `deps.Check`, wiring, signal handling, `ebiten.RunGame` |
-| `cmd/ytmctl/` | Terminal debug CLI for `search`, `track`, `playlist`, and `artwork` |
+| `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-catalog`, `-query`, `-playlist`, `-debug`), `deps.Check`, wiring, signal handling, `ebiten.RunGame` |
+| `cmd/ytmctl/` | Terminal debug CLI for `search`, `track`, `playlist`, and `artwork` with `-catalog ytmusic\|ytdlp` |
 | `internal/model/` | Shared domain types (`Track`, `StreamInfo`) and YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`, `DefaultThumbnailURL`) |
 | `internal/deps/` | Startup discovery and version checks for `yt-dlp` and `ffmpeg` |
 | `internal/ytdlp/` | Stream URL resolution (`-g`) and 5-hour URL cache |
 | `internal/catalog/` | `Catalog` interface, `IsPlaylistTarget`, and debounced, generation-tagged async `Searcher` |
 | `internal/catalog/ytdlp/` | `yt-dlp -J` catalog implementation (search, track metadata, playlists), stdout limits, and in-memory caches |
+| `internal/catalog/ytmusic/` | Pure-Go YouTube Music InnerTube `WEB_REMIX` catalog implementation (`search`, `next`, `browse`) and in-memory caches |
 | `internal/artwork/` | Pure-Go thumbnail fetch, JPEG/PNG/WebP decode, `64x64`/`300x300` bilinear resize, atomic disk cache, in-memory LRU, and `Placeholder` |
 | `internal/audio/` | `ffmpeg` `f32le` 48 kHz stereo PCM `Source` (`Opener`) and `ebiten/v2/audio` sink (`EbitenSink`) |
 | `internal/playback/` | Headless actor `Controller`, explicit state transition table, queue (history, shuffle bag, repeat), seek-by-reopen, prefetch, and error taxonomy |
@@ -26,7 +27,7 @@ Guidelines for coding agents working in `ytm-wmp`.
 ### Architectural Boundaries & Invariants
 
 - **One-way dependencies**:
-  - `internal/skin`, `internal/artwork`, and `internal/catalog` must **not** import `ebiten`, `internal/ui`, or `internal/playback`.
+  - `internal/skin`, `internal/artwork`, and `internal/catalog/...` must **not** import `ebiten`, `internal/ui`, `internal/playback`, or `internal/ytdlp`.
   - `internal/ytdlp` imports only `internal/model` + stdlib (never `internal/audio`).
   - `internal/playback` must **not** import `internal/ui` or `internal/catalog`.
   - `cmd/*` wires packages together and holds no playback or UI business logic.

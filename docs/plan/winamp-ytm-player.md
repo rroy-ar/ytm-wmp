@@ -1,34 +1,39 @@
 # Plan: from the PoC to a full YouTube Music player with classic `.wsz` skins
 
-Status: active execution plan. Phases 0, 1, 2, 3A, and the Phase 3.5 cleanup
-are complete; Phase 3B (`internal/catalog/ytmusic` InnerTube `WEB_REMIX` backend)
-is next ahead of Phase 4 (complete classic skin system). This document is the
-single source of truth for architecture, status, and upcoming milestones.
+Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are
+complete; Phase 4 (complete classic skin system) is next ahead of Phase 5
+(full player UX and persistence). This document is the single source of truth for
+architecture, status, and upcoming milestones.
 
 Last updated: 2026-11-15.
 
 ## 1. Where the project is today
 
-Phases 1–3A and the Phase 3.5 hardening pass turned the PoC into a multi-track,
-catalog-backed desktop player with clear architectural seams.
+Phases 1–3B turned the PoC into a multi-track, catalog-backed desktop player
+with clear architectural seams and both pure-Go YouTube Music InnerTube
+(`WEB_REMIX`) and `yt-dlp` catalog backends.
 
 Implemented and covered by tests:
 
-- `cmd/ytm-wmp` is wiring only: `-url`, `-skin`, `-query`, `-playlist`, `-debug`,
-  dependency checks, signal handling, skin loading, catalog/artwork wiring, and
-  `ebiten.RunGame`.
+- `cmd/ytm-wmp` is wiring only: `-url`, `-skin`, `-catalog`, `-query`,
+  `-playlist`, `-debug`, dependency checks, signal handling, skin loading,
+  catalog/artwork wiring, and `ebiten.RunGame`.
 - `cmd/ytmctl` provides a debug CLI for `search`, `track`, `playlist`, and
-  `artwork` (resolving cold-cache artwork via `catalog.Catalog` or
-  `model.DefaultThumbnailURL`).
+  `artwork` with `-catalog ytmusic|ytdlp` (resolving cold-cache artwork via
+  `catalog.Catalog` or `model.DefaultThumbnailURL`).
 - Ebitengine v2.10.5 opens a 275x348 logical canvas (275x116 skinned main window
   plus 275x232 catalog browser panel).
 - `internal/model` owns shared domain types (`Track`, `StreamInfo`) and pure
   YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`,
   `DefaultThumbnailURL`).
-- `internal/catalog` defines the `Catalog` interface, `IsPlaylistTarget`, and a
-  debounced, generation-tagged async `Searcher`; `internal/catalog/ytdlp`
-  implements `yt-dlp -J` search, track metadata, and playlist extraction with
-  stdout caps and search/track caches.
+- `internal/catalog` defines the `Catalog` interface, `IsPlaylistTarget`
+  (playlist URLs/IDs plus YTM `/browse/...`, `VL...`, `MPREb_...`, and
+  `RDCLAK5uy_...` targets), and a debounced, generation-tagged async
+  `Searcher`; `internal/catalog/ytmusic` implements pure-Go YouTube Music
+  InnerTube `WEB_REMIX` (`search`, `next`, `browse`) with response byte caps and
+  search/track TTL caches; `internal/catalog/ytdlp` implements `yt-dlp -J`
+  search, track metadata, and playlist extraction with stdout caps and
+  search/track caches.
 - `internal/artwork` fetches, decodes (JPEG/PNG/WebP), resizes (64x64 list and
   300x300 now-playing), and caches thumbnails on disk and in an in-memory LRU.
 - `internal/skin` loads `.wsz`, `.zip`, or a directory of loose BMPs. It
@@ -63,8 +68,6 @@ Implemented and covered by tests:
 
 What is still missing:
 
-- Phase 3B: pure-Go YouTube Music InnerTube `WEB_REMIX` catalog backend in
-  `internal/catalog/ytmusic` and `-catalog ytmusic|ytdlp` selection.
 - Persistence (config, queue, layout) and M3U import/export.
 - Skinned playlist/EQ windows, bitmap text, volume/balance/seek bars, shuffle
   and repeat buttons, and the complete Webamp sprite table.
@@ -112,8 +115,9 @@ Explicitly out of scope for v1:
 | D9 | Text | Bitmap `text.bmp` for chrome; embedded TTF fallback for non-ASCII | Classic skins have no Unicode. Search/playlist titles do. Use bitmap for classic look, TTF where needed. |
 | D10 | Artwork cache | Files on disk by video ID; in-memory LRU of decoded images | Simple, inspectable, no database. Fetch/decode off the UI goroutine. |
 
-Phases 1–3A implemented D1, D2 (fixed main+browser rack), D3 (`yt-dlp`
-catalog first), D4, D5, D6 (recorded in ADR 0003), D8, and D10. D2 is refined in
+Phases 1–3B implemented D1, D2 (fixed main+browser rack), D3 (both `yt-dlp`
+and pure-Go InnerTube `WEB_REMIX` behind `catalog.Catalog`, selectable via
+`-catalog`), D4, D5, D6 (recorded in ADR 0003), D8, and D10. D2 is refined in
 ADR 0002 to use a docked/stacked rack in Phase 4B. D7 and D9 arrive in Phases
 4–5.
 
@@ -143,7 +147,7 @@ internal/model/              Track, StreamInfo, VideoID, IsVideoID, NormalizeTra
 internal/deps/               yt-dlp/ffmpeg discovery and version checks
 internal/catalog/            Catalog interface, IsPlaylistTarget, debounced Searcher
 internal/catalog/ytdlp/      Phase 3A yt-dlp -J catalog implementation
-internal/catalog/ytmusic/    Phase 3B pure-Go InnerTube WEB_REMIX catalog implementation (next)
+internal/catalog/ytmusic/    Phase 3B pure-Go InnerTube WEB_REMIX catalog implementation
 internal/artwork/            thumbnail fetch/decode/resize/disk+LRU cache/placeholder
 internal/store/              planned config, queue, M3U, atomic writes
 internal/testutil/           planned fake runner/source/skin helpers
@@ -608,20 +612,24 @@ Implemented in Phase 3A behind `catalog.Catalog`, `catalog.Searcher`, and
   `Enter` submits immediately and cancels prior requests.
 - In-memory TTL caches for search (`10m`) and track metadata (`1h`).
 
-### 9.2 InnerTube `WEB_REMIX` catalog (3B — next)
+### 9.2 InnerTube `WEB_REMIX` catalog (3B — done)
 
-- Package `internal/catalog/ytmusic` implementing `catalog.Catalog` (`Search`,
+- Package `internal/catalog/ytmusic` implements `catalog.Catalog` (`Search`,
   `Track`, `Playlist`) via pure-Go HTTP POST requests to YouTube Music
   InnerTube endpoints (`https://music.youtube.com/youtubei/v1/search`, `next`,
-  `browse`) using the `WEB_REMIX` client context.
-- Keep `internal/ytdlp` (`yt-dlp -g`) as the stream URL resolver so signature and
+  `browse`) using the `WEB_REMIX` client context, `DefaultMaxResponseBytes`
+  (`16 MiB`), `10m` search TTL cache, and `1h` track metadata cache.
+- Handles `VL...` / `PL...` / `OLAK5uy_...` / `MPREb_...` / `RDCLAK5uy_...`
+  playlists and albums (inheriting album header metadata/artwork when track rows
+  omit them and falling back to `/next` when `/browse` yields no items).
+- Keeps `internal/ytdlp` (`yt-dlp -g`) as the stream URL resolver so signature and
   cipher churn remain isolated in `yt-dlp`.
-- Add a `-catalog ytmusic|ytdlp` flag in both `cmd/ytm-wmp` and `cmd/ytmctl`.
-- Do not add account/auth/cookies in v1. If needed later, isolate auth in a
-  separate component and never log secrets.
-- Test offline against recorded `WEB_REMIX` JSON response fixtures in
-  `internal/catalog/ytmusic/testdata/`; gate live InnerTube tests behind
-  `YTM_LIVE=1`.
+- Added `-catalog ytmusic|ytdlp` (default `ytmusic`) in both `cmd/ytm-wmp` and
+  `cmd/ytmctl`.
+- No account/auth/cookies in v1.
+- Tested offline against recorded `WEB_REMIX` JSON response fixtures in
+  `internal/catalog/ytmusic/testdata/`, with live InnerTube tests gated behind
+  `YTM_LIVE=1` / `YTM_WMP_LIVE_TEST=1`.
 
 ### 9.3 Artwork (3A — done)
 
@@ -670,7 +678,7 @@ type Config struct {
 
 Sizes are relative: S = a few sessions, M = about a week of evenings, L =
 multiple weeks. The critical path is 0 -> 1 -> 2 -> 3A -> 3B -> 4 -> 5 -> 7.
-Phases 0, 1, 2, 3A, and 3.5 cleanup are complete; Phase 3B is next.
+Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are complete; Phase 4 is next.
 
 | Phase | Outcome | Size | Status |
 |-------|---------|------|--------|
@@ -678,8 +686,8 @@ Phases 0, 1, 2, 3A, and 3.5 cleanup are complete; Phase 3B is next.
 | 1 | Ebitengine window with a skinned main window and audio | M | done |
 | 2 | Playback core: queue, seek, recovery | L | done |
 | 3A | `yt-dlp` catalog, artwork cache, browser panel | M | done |
-| 3B | Pure-Go YTM InnerTube `WEB_REMIX` catalog backend | S-M | next |
-| 4 | Complete classic skin system | L | planned |
+| 3B | Pure-Go YTM InnerTube `WEB_REMIX` catalog backend | S-M | done |
+| 4 | Complete classic skin system | L | next |
 | 5 | Full player UX and persistence | L | planned |
 | 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | optional |
 | 7 | Hardening and v0.1 release | M | planned |
@@ -796,12 +804,12 @@ main transport buttons and keyboard shortcuts.
 - Unit tests with fakes (`go test -race ./...`), goroutine-leak verification
   across 20 track changes, and opt-in `YTM_WMP_LIVE_TEST=1` integration test.
 
-### Phase 3 — Catalog: search, metadata, artwork (done — 3A)
+### Phase 3 — Catalog: search, metadata, artwork (done — 3A & 3B)
 
 **Goal:** stop hardcoding tracks.
 
-**Outcome:** completed Phase 3A. Moved `StreamInfo` into `internal/model` and
-exported `ytdlp.VideoID`, added `internal/catalog` (`Catalog` interface,
+**Outcome:** completed Phase 3A and Phase 3B. Phase 3A moved `StreamInfo` into
+`internal/model`, added `internal/catalog` (`Catalog` interface,
 `IsPlaylistTarget`, debounced/generation-tagged `Searcher`), implemented
 `internal/catalog/ytdlp` (`yt-dlp -J` search, track metadata, and playlist
 extraction with stdout cap, caches, and JSON fixtures), added `internal/artwork`
@@ -809,7 +817,13 @@ extraction with stdout cap, caches, and JSON fixtures), added `internal/artwork`
 in-memory LRU, placeholder), added `cmd/ytmctl`, added `playback.UpdateTrack`
 for non-interrupting metadata enrichment, and integrated the catalog browser
 panel, search box, artwork display, and `-query`/`-playlist` flags into
-`internal/ui` and `cmd/ytm-wmp`.
+`internal/ui` and `cmd/ytm-wmp`. Phase 3B implemented `internal/catalog/ytmusic`
+(pure-Go InnerTube `WEB_REMIX` `search`/`next`/`browse` with response caps,
+search/track TTL caches, and recorded JSON fixtures), expanded
+`catalog.IsPlaylistTarget` for `/browse/...`, `VL...`, `MPREb_...`, and
+`RDCLAK5uy_...` targets, and wired `-catalog ytmusic|ytdlp` (default `ytmusic`)
+into `cmd/ytm-wmp` and `cmd/ytmctl` while keeping `internal/ytdlp` (`yt-dlp -g`)
+as the stream URL resolver.
 
 **Work (3A, yt-dlp — done)**
 
@@ -820,16 +834,18 @@ panel, search box, artwork display, and `-query`/`-playlist` flags into
 - Browser window: search field, results list, play/queue actions, metadata enrichment.
 - `cmd/ytmctl` debug CLI (`search`, `track`, `playlist`, `artwork`).
 
-**Work (3B, YouTube Music InnerTube — next)**
+**Work (3B, YouTube Music InnerTube — done)**
 
-- Implement `internal/catalog/ytmusic` behind `catalog.Catalog` (`Search`,
+- Implemented `internal/catalog/ytmusic` behind `catalog.Catalog` (`Search`,
   `Track`, `Playlist`) using pure-Go HTTP POST calls to
   `https://music.youtube.com/youtubei/v1/search`, `next`, and `browse` with the
   `WEB_REMIX` client context.
-- Keep `internal/ytdlp` (`yt-dlp -g`) as the stream URL resolver.
-- Add a `-catalog ytmusic|ytdlp` flag in `cmd/ytm-wmp` and `cmd/ytmctl`.
-- Test offline with recorded `WEB_REMIX` JSON response fixtures in
-  `internal/catalog/ytmusic/testdata/` and gate live requests behind `YTM_LIVE=1`.
+- Kept `internal/ytdlp` (`yt-dlp -g`) as the stream URL resolver.
+- Added `-catalog ytmusic|ytdlp` (default `ytmusic`) in `cmd/ytm-wmp` and
+  `cmd/ytmctl`.
+- Tested offline with recorded `WEB_REMIX` JSON response fixtures in
+  `internal/catalog/ytmusic/testdata/` and live InnerTube requests gated behind
+  `YTM_LIVE=1`.
 
 **Verify:** 10 results with title/artist/duration/thumbnail; selecting plays;
 playlist URL imports; repeat search is instant; UI stays responsive; fixtures
@@ -958,17 +974,20 @@ limitations documented.
 
 ## 13. Testing and instrumentation
 
-### Current coverage (after Phase 3A & Phase 3.5 cleanup)
+### Current coverage (after Phase 3B)
 
 - **Model & yt-dlp:** `VideoID`/`IsVideoID`/`NormalizeTrackID`/`DefaultThumbnailURL`
   table-driven tests, 5h URL cache expiry, stale-URL `Forget`, bounded stdout/stderr
   subprocess caps (`ExecRunner`), `ffmpeg` argument construction, zero-frame
   classification, and dependency discovery.
-- **Catalog & artwork:** `catalog.IsPlaylistTarget`, debounced/generation-tagged
+- **Catalog & artwork:** `catalog.IsPlaylistTarget` (playlist URLs/IDs, `/browse/...`,
+  `VL...`, `MPREb_...`, `RDCLAK5uy_...`), debounced/generation-tagged
   `catalog.Searcher` cancellation, `internal/catalog/ytdlp` offline JSON fixture
-  tests (`search`, `track`, `playlist`, stdout cap), `internal/artwork`
+  tests (`search`, `track`, `playlist`, stdout cap), `internal/catalog/ytmusic`
+  offline `WEB_REMIX` JSON fixture tests (`search`, `next`, `browse`, caching,
+  max response bytes, empty/not-found errors), `internal/artwork`
   JPEG/PNG/WebP decode/resize/disk+LRU cache/single-flight tests, and
-  `cmd/ytmctl` CLI tests.
+  `cmd/ytmctl` / `cmd/ytm-wmp` `-catalog` flag selection tests.
 - **Playback:** queue navigation/history/non-repeating shuffle bag/repeat modes,
   `UpdateTrack` enrichment, zero-copy read-only `Snapshot.Queue`, seek-by-reopen,
   URL prefetching, stale-URL retry, error taxonomy, and 20-track-change goroutine
@@ -985,7 +1004,7 @@ limitations documented.
 - **Audio:** f32le format contract, sink lifecycle, pause/resume, pause during
   resolve, teardown ordering, clean EOF vs. nonzero exit, and explicit kill.
 - **Opt-in live tests:** `YTM_WMP_LIVE_TEST=1` in `internal/playback` and
-  `YTM_LIVE=1` in `internal/catalog/ytdlp`.
+  `YTM_LIVE=1` in `internal/catalog/ytdlp` and `internal/catalog/ytmusic`.
 - `go test -race ./...` and `go vet ./...` pass. Building Ebitengine tests
   requires X11/GL development headers (documented in the README).
 
@@ -1016,6 +1035,7 @@ go build ./...
 # Planned once the fuzz/live fixtures exist:
 go test -fuzz=FuzzSkinOpen ./internal/skin -fuzztime=30s
 YTM_LIVE=1 go test ./internal/catalog/ytdlp -run Live
+YTM_LIVE=1 go test ./internal/catalog/ytmusic -run Live
 ```
 
 ### Instrumentation
@@ -1046,6 +1066,8 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `2c127ac` feat(cmd): add -catalog ytmusic|ytdlp flag to ytm-wmp and ytmctl
+- `fa6fd95` feat(catalog): implement ytmusic InnerTube WEB_REMIX catalog backend
 - `a340fcd` refactor(ui): extract browserPanel state and replace magic rects with layout constants
 - `b16110b` fix(ui): keep playlist search in browser results, bound workers, and manage GPU textures
 - `be323ea` perf(playback,ui): avoid per-call queue slice allocation in Snapshot and read once per tick
@@ -1074,10 +1096,9 @@ Recent trail as of this update (newest first):
 - `d4d9042` feat(skin): load classic .wsz archives and loose BMP directories
 - `1858514` refactor: land phase 0 architecture seams
 
-Next up is Phase 3B (`internal/catalog/ytmusic` pure-Go YouTube Music InnerTube
-`WEB_REMIX` catalog backend + `-catalog ytmusic|ytdlp`), followed by Phase 4A/4B
-(full Webamp sprite table, `pledit.txt`/`viscolor.txt`, bitmap text/digits,
-sliders/toggles, and the docked/stacked Winamp rack window manager).
+Next up is Phase 4A/4B (full Webamp sprite table, `pledit.txt`/`viscolor.txt`,
+bitmap text/digits, sliders/toggles, and the docked/stacked Winamp rack window
+manager), followed by Phase 5 (full player UX and persistence).
 
 ## 15. Open questions
 

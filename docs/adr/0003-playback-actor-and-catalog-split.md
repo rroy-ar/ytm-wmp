@@ -47,7 +47,8 @@ architectural boundaries were required:
    - `internal/catalog` owns the `Catalog` interface (`Search`, `Playlist`,
      `Track`), `IsPlaylistTarget`, and the debounced, generation-tagged
      `Searcher`, implemented in Phase 3A by `internal/catalog/ytdlp` (`yt-dlp -J`)
-     and extensible in Phase 3B by `internal/catalog/ytmusic` without touching
+     and in Phase 3B by `internal/catalog/ytmusic` (pure-Go InnerTube
+     `WEB_REMIX`), selectable via `-catalog ytmusic|ytdlp` without touching
      playback or stream resolution.
    - `internal/playback` never imports `internal/catalog` or `internal/ui`; UI
      background enrichment resolves metadata through `catalog.Catalog` and

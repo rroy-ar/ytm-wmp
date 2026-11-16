@@ -126,6 +126,21 @@ func TestExecuteArtworkAndErrors(t *testing.T) {
 		t.Fatalf("artwork output = %q", out.String())
 	}
 
+	out.Reset()
+	catCache := artwork.NewCache(artwork.WithCacheDir(t.TempDir()))
+	cat := &fakeCatalog{
+		track: model.Track{
+			ID:           "0wRYvsfhsR8",
+			ThumbnailURL: srv.URL,
+		},
+	}
+	if err := execute(context.Background(), []string{"artwork", "0wRYvsfhsR8"}, &out, &errOut, cat, catCache); err != nil {
+		t.Fatalf("artwork via catalog = %v", err)
+	}
+	if !strings.Contains(out.String(), "video_id=0wRYvsfhsR8") || !strings.Contains(out.String(), "list=64x64") || !strings.Contains(out.String(), "now_playing=300x300") {
+		t.Fatalf("artwork via catalog output = %q", out.String())
+	}
+
 	if err := execute(context.Background(), nil, &out, &errOut, nil, nil); err == nil {
 		t.Fatal("empty args succeeded, want error")
 	}

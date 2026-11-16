@@ -44,6 +44,9 @@ func main() {
 			cat = catalogytdlp.New(catalogytdlp.WithBinary(tool.Path))
 		case "artwork":
 			art = artwork.NewCache(artwork.WithCacheDir(defaultArtworkDir()))
+			if tool, err := deps.Check(ctx, "yt-dlp"); err == nil {
+				cat = catalogytdlp.New(catalogytdlp.WithBinary(tool.Path))
+			}
 		}
 	}
 
@@ -167,6 +170,9 @@ func runArtwork(ctx context.Context, args []string, stdout, stderr io.Writer, ca
 	}
 
 	videoID := strings.TrimSpace(fs.Arg(0))
+	if vid := model.VideoID(videoID); vid != "" {
+		videoID = vid
+	}
 	thumbURL := ""
 	if fs.NArg() == 2 {
 		thumbURL = strings.TrimSpace(fs.Arg(1))
@@ -182,6 +188,9 @@ func runArtwork(ctx context.Context, args []string, stdout, stderr io.Writer, ca
 		if tr, err := cat.Track(ctx, videoID); err == nil {
 			thumbURL = tr.ThumbnailURL
 		}
+	}
+	if thumbURL == "" {
+		thumbURL = model.DefaultThumbnailURL(videoID)
 	}
 
 	b, err := art.Get(ctx, videoID, thumbURL)

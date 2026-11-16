@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"ytm-wmp/internal/audio"
 	"ytm-wmp/internal/deps"
@@ -490,6 +491,26 @@ func TestUpdateTrackEnrichesActiveAndQueuedTrackWithoutInterruptingPlayback(t *t
 		q := ctrl.Snapshot().Queue
 		return len(q) == 2 && q[1].Title == "One More Time"
 	})
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
+func TestControllerSnapshotSharesReadOnlyQueueSlice(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ctrl := NewController(newFakeResolver(), newFakeOpener(), newFakeSink())
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{Tracks: makeTracks(3), Index: 0, AutoPlay: true})
+	waitState(t, ctrl, StatePlaying)
+
+	s1 := ctrl.Snapshot()
+	s2 := ctrl.Snapshot()
+	if len(s1.Queue) != 3 || unsafe.SliceData(s1.Queue) != unsafe.SliceData(s2.Queue) {
+		t.Fatalf("expected Snapshot() to reuse immutable Queue backing array without per-call cloning")
+	}
 
 	cancel()
 	waitDone(t, ctrl)

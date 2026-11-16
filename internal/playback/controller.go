@@ -138,15 +138,13 @@ func (c *Controller) Events() <-chan Event {
 }
 
 // Snapshot returns a race-free copy of the current playback state.
+// The returned Queue slice is immutable and shared until the queue changes.
 func (c *Controller) Snapshot() Snapshot {
 	cur := c.snap.Load()
 	if cur == nil {
 		return Snapshot{State: StateIdle, Index: -1, Volume: 1}
 	}
 	out := cur.snap
-	if len(cur.snap.Queue) > 0 {
-		out.Queue = append([]model.Track(nil), cur.snap.Queue...)
-	}
 	switch out.State {
 	case StatePlaying, StatePaused:
 		pos := cur.baseOffset + c.sink.Position()

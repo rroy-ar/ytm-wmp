@@ -78,12 +78,9 @@ func (g *Game) updateBrowser() {
 	g.drainSearchResults()
 	g.drainEnrichments()
 
-	if g.ctrl != nil {
-		snap := g.ctrl.Snapshot()
-		if snap.Track.ID != "" {
-			g.maybeEnrichTrack(snap.Track)
-			g.requestArtwork(snap.Track)
-		}
+	if g.snap.Track.ID != "" {
+		g.maybeEnrichTrack(g.snap.Track)
+		g.requestArtwork(g.snap.Track)
 	}
 
 	g.drainArtwork()
@@ -495,10 +492,7 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 	ebitenutil.DebugPrintAt(screen, "CATALOG", 6, MainWindowHeight)
 	ebitenutil.DebugPrintAt(screen, truncateRunes(g.searchStatus, 28), 72, MainWindowHeight)
 
-	var snap playback.Snapshot
-	if g.ctrl != nil {
-		snap = g.ctrl.Snapshot()
-	}
+	snap := g.snap
 
 	// Now-Playing strip.
 	vector.DrawFilledRect(screen, 4, 129, 267, 29, colSurfaceBg, false)

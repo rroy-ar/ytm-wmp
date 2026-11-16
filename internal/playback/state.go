@@ -124,6 +124,8 @@ func canTransition(from, to State) bool {
 }
 
 // Snapshot is an immutable point-in-time view of playback state for the UI.
+// Queue is shared across snapshots until the queue changes; callers must treat
+// Queue as read-only and never mutate its elements.
 type Snapshot struct {
 	State     State
 	Track     model.Track

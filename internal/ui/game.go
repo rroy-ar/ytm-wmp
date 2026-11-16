@@ -89,6 +89,8 @@ type Game struct {
 
 	view      *skinview.View
 	pointer   Pointer
+	snap      playback.Snapshot
+	hasSnap   bool
 	debug     bool
 	audioInit bool
 
@@ -170,6 +172,10 @@ func (g *Game) Update() error {
 	}
 
 	g.drainEvents()
+	if g.ctrl != nil {
+		g.snap = g.ctrl.Snapshot()
+		g.hasSnap = true
+	}
 	g.updateBrowser()
 
 	cursorX, cursorY := ebiten.CursorPosition()
@@ -200,6 +206,10 @@ func (g *Game) Update() error {
 // Draw renders the main window and catalog browser. It never does I/O, resolves
 // URLs, or allocates textures; those happen off-thread or inside Update.
 func (g *Game) Draw(screen *ebiten.Image) {
+	if !g.hasSnap && g.ctrl != nil {
+		g.snap = g.ctrl.Snapshot()
+		g.hasSnap = true
+	}
 	screen.Fill(color.RGBA{R: 0x0c, G: 0x0f, B: 0x14, A: 0xff})
 	if g.view == nil {
 		ebitenutil.DebugPrintAt(screen, "skin view not ready", 8, 8)
@@ -285,7 +295,7 @@ func (g *Game) handleKeys() {
 	if g.ctrl == nil {
 		return
 	}
-	snap := g.ctrl.Snapshot()
+	snap := g.snap
 
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		slog.Debug("ui key", "key", "space", "state", snap.State.String())
@@ -459,10 +469,7 @@ func (g *Game) drawDebug(screen *ebiten.Image) {
 		vector.StrokeRect(screen, float32(b.Min.X)+0.5, float32(b.Min.Y)+0.5, float32(b.Dx()), float32(b.Dy()), 1, magenta, false)
 	}
 
-	var snap playback.Snapshot
-	if g.ctrl != nil {
-		snap = g.ctrl.Snapshot()
-	}
+	snap := g.snap
 
 	// Keep the report to six short lines: the built-in debug font does not
 	// wrap, and the window is only 275 logical pixels wide.

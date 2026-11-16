@@ -1,3 +1,11 @@
 # Local build outputs. Never commit binaries.
 /main
 /winamp-ytm
+/ytm-wmp
+/ytmctl
+*.test
+*.out
+coverage.out
+
+# Local copyrighted .wsz test skins.
+/skins/

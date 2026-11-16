@@ -1,0 +1,87 @@
+{
+  "contents": {
+    "singleColumnMusicWatchNextResultsRenderer": {
+      "tabbedRenderer": {
+        "watchNextTabbedResultsRenderer": {
+          "tabs": [
+            {
+              "tabRenderer": {
+                "title": "Up next",
+                "content": {
+                  "musicQueueRenderer": {
+                    "content": {
+                      "playlistPanelRenderer": {
+                        "contents": [
+                          {
+                            "playlistPanelVideoRenderer": {
+                              "videoId": "0wRYvsfhsR8",
+                              "selected": true,
+                              "title": {
+                                "runs": [{"text": "Something About Us"}]
+                              },
+                              "shortBylineText": {
+                                "runs": [{"text": "Daft Punk"}]
+                              },
+                              "longBylineText": {
+                                "runs": [
+                                  {
+                                    "text": "Daft Punk",
+                                    "navigationEndpoint": {
+                                      "browseEndpoint": {
+                                        "browseId": "UCRr1xG_2WIDs18a6cIiCxeA",
+                                        "browseEndpointContextSupportedConfigs": {
+                                          "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ARTIST"}
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {"text": " • "},
+                                  {
+                                    "text": "Discovery",
+                                    "navigationEndpoint": {
+                                      "browseEndpoint": {
+                                        "browseId": "MPREb_1234567890",
+                                        "browseEndpointContextSupportedConfigs": {
+                                          "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {"text": " • "},
+                                  {"text": "2001"}
+                                ]
+                              },
+                              "lengthText": {
+                                "runs": [{"text": "3:52"}]
+                              },
+                              "thumbnail": {
+                                "thumbnails": [
+                                  {"url": "https://i.ytimg.com/vi/0wRYvsfhsR8/default.jpg", "width": 120, "height": 90},
+                                  {"url": "https://i.ytimg.com/vi/0wRYvsfhsR8/mqdefault.jpg", "width": 320, "height": 180},
+                                  {"url": "https://i.ytimg.com/vi/0wRYvsfhsR8/maxresdefault.jpg", "width": 1280, "height": 720}
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "playlistPanelVideoRenderer": {
+                              "videoId": "FGBhQbmPwH8",
+                              "selected": false,
+                              "title": {"runs": [{"text": "One More Time"}]},
+                              "shortBylineText": {"runs": [{"text": "Daft Punk"}]},
+                              "lengthText": {"runs": [{"text": "5:20"}]}
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

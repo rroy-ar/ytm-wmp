@@ -1,0 +1,303 @@
+{
+  "contents": {
+    "tabbedSearchResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "sectionListRenderer": {
+                "contents": [
+                  {
+                    "musicShelfRenderer": {
+                      "title": {"runs": [{"text": "Songs"}]},
+                      "contents": [
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "FGBhQbmPwH8"},
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/default.jpg", "width": 120, "height": 90},
+                                    {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hqdefault.webp", "width": 480, "height": 360},
+                                    {"url": "https://i.ytimg.com/vi/FGBhQbmPwH8/hqdefault.jpg", "width": 480, "height": 360}
+                                  ]
+                                }
+                              }
+                            },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {
+                                    "runs": [
+                                      {
+                                        "text": "One More Time",
+                                        "navigationEndpoint": {
+                                          "watchEndpoint": {"videoId": "FGBhQbmPwH8"}
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {
+                                    "runs": [
+                                      {
+                                        "text": "Daft Punk",
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "UCRr1xG_2WIDs18a6cIiCxeA",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ARTIST"}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {"text": " • "},
+                                      {
+                                        "text": "Discovery",
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "MPREb_1234567890",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {"text": " • "},
+                                      {"text": "5:20"}
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "khnokW3Mw24"},
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    {"url": "https://yt3.googleusercontent.com/instantcrush=w120-h120-l90-rj", "width": 120, "height": 120},
+                                    {"url": "https://yt3.googleusercontent.com/instantcrush=w302-h302-l90-rj", "width": 302, "height": 302}
+                                  ]
+                                }
+                              }
+                            },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {"runs": [{"text": "Instant Crush (feat. Julian Casablancas)"}]}
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {
+                                    "runs": [
+                                      {
+                                        "text": "Daft Punk",
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "UCRr1xG_2WIDs18a6cIiCxeA",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ARTIST"}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {"text": " & "},
+                                      {
+                                        "text": "Julian Casablancas",
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "UCWhpbdGLnR8XtXLr0yl2nYA",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ARTIST"}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {"text": " • "},
+                                      {
+                                        "text": "Random Access Memories",
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "MPREb_K8qWMWVqXGi",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {"text": " • "},
+                                      {"text": "5:38"}
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {"runs": [{"text": "1.2B plays"}]}
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {
+                                    "runs": [
+                                      {
+                                        "text": "Discovery (Album Promo - No Video ID)",
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "MPREb_K8qWMWVqXGi",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}
+                                            }
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "overlay": {
+                              "musicItemThumbnailOverlayRenderer": {
+                                "content": {
+                                  "musicPlayButtonRenderer": {
+                                    "playNavigationEndpoint": {
+                                      "watchEndpoint": {"videoId": "A2VpR8HahKc"}
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {"runs": [{"text": "Aerodynamic"}]}
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {"runs": [{"text": "Daft Punk • Discovery • 3:32"}]}
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "L93-7vRfxNs"},
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    {"url": "https://i.ytimg.com/vi/L93-7vRfxNs/mqdefault.jpg", "width": 320, "height": 180}
+                                  ]
+                                }
+                              }
+                            },
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Digital Love"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "5:01"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": ""},
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "[Deleted Song]"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "gN2hntZBIUQ"},
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Harder, Better, Faster, Stronger"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "3:44"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "yca6UsllwYs"},
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    {"url": "https://i.ytimg.com/vi/yca6UsllwYs/hqdefault.jpg", "width": 480, "height": 360}
+                                  ]
+                                }
+                              }
+                            },
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Around the World"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "7:09"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "K0HSD_i2DvA"},
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Da Funk"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "5:28"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "5NV6Rdv1a3I"},
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Get Lucky"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "4:08"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "k55FYpQtXXA"},
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Veridis Quo"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "5:45"}]}}}
+                            ]
+                          }
+                        },
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "TCd6PfxOy0Y"},
+                            "flexColumns": [
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Voyager"}]}}},
+                              {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "3:47"}]}}}
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

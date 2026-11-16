@@ -38,14 +38,18 @@ func IsPlaylistTarget(input string) bool {
 
 	if u, err := url.Parse(s); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
 		q := u.Query()
-		if q.Get("list") == "" {
-			return false
-		}
 		path := strings.TrimRight(u.Path, "/")
-		if path == "/playlist" {
-			return true
+		if q.Get("list") != "" {
+			if path == "/playlist" {
+				return true
+			}
+			return q.Get("v") == ""
 		}
-		return q.Get("v") == ""
+		if strings.HasPrefix(path, "/browse/") {
+			browseID := strings.TrimPrefix(path, "/browse/")
+			return isBarePlaylistID(browseID)
+		}
+		return false
 	}
 
 	return isBarePlaylistID(s)
@@ -56,7 +60,7 @@ func isBarePlaylistID(s string) bool {
 		return false
 	}
 	hasPrefix := false
-	for _, prefix := range []string{"OLAK5uy_", "PL", "UU", "FL", "LL"} {
+	for _, prefix := range []string{"OLAK5uy_", "VL", "MPREb_", "RDCLAK5uy_", "PL", "UU", "FL", "LL"} {
 		if strings.HasPrefix(s, prefix) {
 			hasPrefix = true
 			break

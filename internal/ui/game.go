@@ -137,6 +137,12 @@ func WithSkinPicker(fn SkinPickerFunc) GameOption {
 	return func(g *Game) { g.skinPicker = fn }
 }
 
+// WithIME enables Ebitengine's platform IME Composer (used when running inside
+// ebiten.RunGame; disabled in headless unit tests).
+func WithIME(enabled bool) GameOption {
+	return func(g *Game) { g.imeEnabled = enabled }
+}
+
 type skinLoadResult struct {
 	path string
 	skin *skin.Skin
@@ -168,6 +174,7 @@ type Game struct {
 	hasSnap       bool
 	debug         bool
 	audioInit     bool
+	imeEnabled    bool
 	quitRequested bool
 
 	windowResizer    func(w, h int)
@@ -176,6 +183,7 @@ type Game struct {
 	showEQ       bool
 	hidePL       bool
 	browserMode  bool
+	showSettings bool
 	focusedPanel panelKind
 
 	tick            uint64
@@ -281,7 +289,7 @@ func (g *Game) activeWidgets() []Widget {
 	}
 	if !g.hidePL {
 		if g.browserMode {
-			widgets = append(widgets, browserWidgetsAt(g.plTop())...)
+			widgets = append(widgets, g.browserWidgetsAt(g.plTop())...)
 		} else {
 			widgets = append(widgets, playlistWidgetsAt(g.plTop(), g.plMenu)...)
 		}
@@ -341,7 +349,8 @@ func (g *Game) Update() error {
 			g.showArtModal = false
 		}
 	}
-	if !g.showArtModal && g.browserMode && !g.hidePL &&
+	if !g.showArtModal && !g.showSettings && g.browserMode && !g.hidePL &&
+		len(g.detailStack) == 0 && g.activeTab != browserTabQueue &&
 		(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonMiddle) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight)) &&
 		image.Pt(cursorX, cursorY).In(offsetRect(SearchInputBounds, dy)) {
 		g.pasteSearch()
@@ -364,6 +373,7 @@ func (g *Game) Update() error {
 		g.plMenu = plMenuNone
 	}
 
+	g.updateSearchIME()
 	g.handleKeys()
 	g.maybeSaveEQ()
 

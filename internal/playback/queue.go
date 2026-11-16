@@ -311,6 +311,37 @@ func (q *queue) Remove(indices []int) (changed, currentRemoved bool) {
 	return true, currentRemoved
 }
 
+// Move shifts the track at from to index to while preserving the active track
+// selection.
+func (q *queue) Move(from, to int) bool {
+	if from == to || from < 0 || from >= len(q.tracks) || to < 0 || to >= len(q.tracks) {
+		return false
+	}
+	moved := q.tracks[from]
+	if from < to {
+		copy(q.tracks[from:to], q.tracks[from+1:to+1])
+		q.tracks[to] = moved
+		if q.index == from {
+			q.index = to
+		} else if q.index > from && q.index <= to {
+			q.index--
+		}
+	} else {
+		copy(q.tracks[to+1:from+1], q.tracks[to:from])
+		q.tracks[to] = moved
+		if q.index == from {
+			q.index = to
+		} else if q.index >= to && q.index < from {
+			q.index++
+		}
+	}
+	q.history = nil
+	if q.shuffle {
+		q.rebuildBag(q.index)
+	}
+	return true
+}
+
 // SortByTitle sorts queue tracks alphabetically by Artist then Title while
 // keeping the current track selected at its new index.
 func (q *queue) SortByTitle() bool {

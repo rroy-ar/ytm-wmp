@@ -161,6 +161,7 @@ type SetQueue struct {
 }
 type Enqueue struct{ Tracks []model.Track }
 type RemoveIndices struct{ Indices []int }
+type MoveTrack struct{ From, To int }
 type SortQueue struct{}
 type UpdateTrack struct{ Track model.Track }
 type SetShuffle struct{ Enabled bool }
@@ -179,6 +180,7 @@ func (SetVolume) isCommand()     {}
 func (SetQueue) isCommand()      {}
 func (Enqueue) isCommand()       {}
 func (RemoveIndices) isCommand() {}
+func (MoveTrack) isCommand()     {}
 func (SortQueue) isCommand()     {}
 func (UpdateTrack) isCommand()   {}
 func (SetShuffle) isCommand()    {}

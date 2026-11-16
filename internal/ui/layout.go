@@ -3,6 +3,7 @@ package ui
 import (
 	"image"
 
+	"ytm-wmp/internal/catalog"
 	"ytm-wmp/internal/skin"
 )
 
@@ -19,7 +20,7 @@ const (
 	WindowHeight = MainWindowHeight + BrowserHeight
 
 	VisibleResultRows   = 6
-	ResultRowHeight     = 24
+	ResultRowHeight     = 22
 	VisiblePlaylistRows = 13
 	PlaylistRowHeight   = 13
 )
@@ -72,21 +73,33 @@ const (
 	WidgetPLMenuItem1 = "playlist.menu.1"
 	WidgetPLMenuItem2 = "playlist.menu.2"
 
-	WidgetNowPlayingArt    = "browser.nowplaying.art"
-	WidgetBrowserModePL    = "browser.mode_playlist"
-	WidgetSearchInput      = "browser.search.input"
-	WidgetSearchSubmit     = "browser.search.submit"
-	WidgetSearchClear      = "browser.search.clear"
-	WidgetResultRow0       = "browser.result.0"
-	WidgetResultRow1       = "browser.result.1"
-	WidgetResultRow2       = "browser.result.2"
-	WidgetResultRow3       = "browser.result.3"
-	WidgetResultRow4       = "browser.result.4"
-	WidgetResultRow5       = "browser.result.5"
-	WidgetBrowserPlay      = "browser.play"
-	WidgetBrowserQueue     = "browser.queue"
-	WidgetBrowserImportAll = "browser.import_all"
-	WidgetBrowserAutoplay  = "browser.autoplay"
+	WidgetNowPlayingArt      = "browser.nowplaying.art"
+	WidgetBrowserSettings    = "browser.settings"
+	WidgetBrowserModePL      = "browser.mode_playlist"
+	WidgetBrowserTabSongs    = "browser.tab.songs"
+	WidgetBrowserTabPlaylist = "browser.tab.playlists"
+	WidgetBrowserTabAlbums   = "browser.tab.albums"
+	WidgetBrowserTabArtists  = "browser.tab.artists"
+	WidgetBrowserTabQueue    = "browser.tab.queue"
+	WidgetDetailBack         = "browser.detail.back"
+	WidgetDetailModeToggle   = "browser.detail.mode"
+	WidgetQueueMoveUp        = "browser.queue.up"
+	WidgetQueueMoveDown      = "browser.queue.down"
+	WidgetQueueRemove        = "browser.queue.rem"
+	WidgetQueueClear         = "browser.queue.clr"
+	WidgetSearchInput        = "browser.search.input"
+	WidgetSearchSubmit       = "browser.search.submit"
+	WidgetSearchClear        = "browser.search.clear"
+	WidgetResultRow0         = "browser.result.0"
+	WidgetResultRow1         = "browser.result.1"
+	WidgetResultRow2         = "browser.result.2"
+	WidgetResultRow3         = "browser.result.3"
+	WidgetResultRow4         = "browser.result.4"
+	WidgetResultRow5         = "browser.result.5"
+	WidgetBrowserPlay        = "browser.play"
+	WidgetBrowserQueue       = "browser.queue"
+	WidgetBrowserImportAll   = "browser.import_all"
+	WidgetBrowserAutoplay    = "browser.autoplay"
 )
 
 var eqBandWidgetIDs = [10]string{
@@ -117,12 +130,24 @@ var (
 	MainRepeatBounds   = image.Rect(210, 89, 238, 104)
 	MainSkinBounds     = image.Rect(252, 90, 266, 104)
 
-	NowPlayingArtBounds    = image.Rect(6, 130, 32, 156)
+	NowPlayingArtBounds    = image.Rect(6, 130, 28, 152)
+	BrowserSettingsBounds  = image.Rect(194, 117, 226, 128)
 	BrowserModePLBounds    = image.Rect(228, 117, 272, 128)
-	SearchInputBounds      = image.Rect(6, 160, 198, 178)
-	SearchSubmitBounds     = image.Rect(200, 160, 234, 178)
-	SearchClearBounds      = image.Rect(236, 160, 269, 178)
-	ResultListBounds       = image.Rect(6, 180, 269, 324)
+	BrowserTabSongsBounds  = image.Rect(6, 155, 56, 169)
+	BrowserTabPLBounds     = image.Rect(58, 155, 112, 169)
+	BrowserTabAlbumsBounds = image.Rect(114, 155, 166, 169)
+	BrowserTabArtistBounds = image.Rect(168, 155, 222, 169)
+	BrowserTabQueueBounds  = image.Rect(224, 155, 269, 169)
+	SearchInputBounds      = image.Rect(6, 171, 198, 187)
+	SearchSubmitBounds     = image.Rect(200, 171, 234, 187)
+	SearchClearBounds      = image.Rect(236, 171, 269, 187)
+	DetailBackBounds       = image.Rect(6, 171, 48, 187)
+	DetailModeBounds       = image.Rect(216, 171, 269, 187)
+	QueueMoveUpBounds      = image.Rect(160, 171, 182, 187)
+	QueueMoveDownBounds    = image.Rect(184, 171, 206, 187)
+	QueueRemoveBounds      = image.Rect(208, 171, 237, 187)
+	QueueClearBounds       = image.Rect(239, 171, 269, 187)
+	ResultListBounds       = image.Rect(6, 189, 269, 321)
 	BrowserPlayBounds      = image.Rect(6, 326, 40, 344)
 	BrowserQueueBounds     = image.Rect(43, 326, 83, 344)
 	BrowserImportAllBounds = image.Rect(86, 326, 132, 344)
@@ -187,6 +212,12 @@ func resultRowBounds(row int) image.Rectangle {
 
 var browserWidgets = []Widget{
 	{ID: WidgetNowPlayingArt, Bounds: NowPlayingArtBounds},
+	{ID: WidgetBrowserSettings, Bounds: BrowserSettingsBounds},
+	{ID: WidgetBrowserTabSongs, Bounds: BrowserTabSongsBounds},
+	{ID: WidgetBrowserTabPlaylist, Bounds: BrowserTabPLBounds},
+	{ID: WidgetBrowserTabAlbums, Bounds: BrowserTabAlbumsBounds},
+	{ID: WidgetBrowserTabArtists, Bounds: BrowserTabArtistBounds},
+	{ID: WidgetBrowserTabQueue, Bounds: BrowserTabQueueBounds},
 	{ID: WidgetSearchInput, Bounds: SearchInputBounds},
 	{ID: WidgetSearchSubmit, Bounds: SearchSubmitBounds},
 	{ID: WidgetSearchClear, Bounds: SearchClearBounds},
@@ -211,12 +242,61 @@ func offsetRect(r image.Rectangle, dy int) image.Rectangle {
 	return r.Add(image.Pt(0, dy))
 }
 
-func browserWidgetsAt(plTop int) []Widget {
+func (g *Game) browserWidgetsAt(plTop int) []Widget {
 	dy := plTop - MainWindowHeight
-	out := make([]Widget, 0, len(browserWidgets)+1)
-	for _, w := range browserWidgets {
-		out = append(out, Widget{ID: w.ID, Bounds: offsetRect(w.Bounds, dy)})
+	out := make([]Widget, 0, len(browserWidgets)+4)
+	out = append(out,
+		Widget{ID: WidgetBrowserSettings, Bounds: offsetRect(BrowserSettingsBounds, dy)},
+		Widget{ID: WidgetBrowserModePL, Bounds: offsetRect(BrowserModePLBounds, dy)},
+	)
+	if g.showSettings {
+		out = append(out, settingsWidgetsAt(dy)...)
+		return out
 	}
-	out = append(out, Widget{ID: WidgetBrowserModePL, Bounds: offsetRect(BrowserModePLBounds, dy)})
+
+	out = append(out,
+		Widget{ID: WidgetNowPlayingArt, Bounds: offsetRect(NowPlayingArtBounds, dy)},
+		Widget{ID: WidgetBrowserTabSongs, Bounds: offsetRect(BrowserTabSongsBounds, dy)},
+		Widget{ID: WidgetBrowserTabPlaylist, Bounds: offsetRect(BrowserTabPLBounds, dy)},
+		Widget{ID: WidgetBrowserTabAlbums, Bounds: offsetRect(BrowserTabAlbumsBounds, dy)},
+		Widget{ID: WidgetBrowserTabArtists, Bounds: offsetRect(BrowserTabArtistBounds, dy)},
+		Widget{ID: WidgetBrowserTabQueue, Bounds: offsetRect(BrowserTabQueueBounds, dy)},
+	)
+
+	switch {
+	case len(g.detailStack) > 0:
+		out = append(out, Widget{ID: WidgetDetailBack, Bounds: offsetRect(DetailBackBounds, dy)})
+		cur := g.detailStack[len(g.detailStack)-1]
+		if cur.detail.Collection.Kind == catalog.CollectionArtist && len(cur.detail.Albums) > 0 {
+			out = append(out, Widget{ID: WidgetDetailModeToggle, Bounds: offsetRect(DetailModeBounds, dy)})
+		}
+	case g.activeTab == browserTabQueue:
+		out = append(out,
+			Widget{ID: WidgetQueueMoveUp, Bounds: offsetRect(QueueMoveUpBounds, dy)},
+			Widget{ID: WidgetQueueMoveDown, Bounds: offsetRect(QueueMoveDownBounds, dy)},
+			Widget{ID: WidgetQueueRemove, Bounds: offsetRect(QueueRemoveBounds, dy)},
+			Widget{ID: WidgetQueueClear, Bounds: offsetRect(QueueClearBounds, dy)},
+		)
+	default:
+		out = append(out,
+			Widget{ID: WidgetSearchInput, Bounds: offsetRect(SearchInputBounds, dy)},
+			Widget{ID: WidgetSearchSubmit, Bounds: offsetRect(SearchSubmitBounds, dy)},
+			Widget{ID: WidgetSearchClear, Bounds: offsetRect(SearchClearBounds, dy)},
+		)
+	}
+
+	for i, rw := range resultRowWidgets {
+		out = append(out, Widget{ID: rw, Bounds: offsetRect(resultRowBounds(i), dy)})
+	}
+	out = append(out,
+		Widget{ID: WidgetBrowserPlay, Bounds: offsetRect(BrowserPlayBounds, dy)},
+		Widget{ID: WidgetBrowserQueue, Bounds: offsetRect(BrowserQueueBounds, dy)},
+		Widget{ID: WidgetBrowserImportAll, Bounds: offsetRect(BrowserImportAllBounds, dy)},
+		Widget{ID: WidgetBrowserAutoplay, Bounds: offsetRect(BrowserAutoplayBounds, dy)},
+	)
 	return out
+}
+
+func settingsWidgetsAt(_ int) []Widget {
+	return nil
 }

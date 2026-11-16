@@ -206,3 +206,32 @@ func TestQueueRemoveAndSort(t *testing.T) {
 		t.Fatalf("Remove all = changed=%v curRemoved=%v len=%d idx=%d", changed, curRemoved, q.Len(), q.Index())
 	}
 }
+
+func TestQueueMovePreservesCurrentIndex(t *testing.T) {
+	q := newQueue(nil)
+	q.Set([]model.Track{{ID: "a"}, {ID: "b"}, {ID: "c"}}, 1) // current: b
+
+	// Move c (2) up to 0 -> [c, a, b], current b moves to 2.
+	if !q.Move(2, 0) {
+		t.Fatal("Move(2, 0) = false")
+	}
+	if q.Index() != 2 || q.tracks[0].ID != "c" || q.tracks[2].ID != "b" {
+		t.Fatalf("after Move(2,0): idx=%d tracks=%v", q.Index(), q.tracks)
+	}
+
+	// Move current b (2) up to 1 -> [c, b, a], current moves to 1.
+	if !q.Move(2, 1) {
+		t.Fatal("Move(2, 1) = false")
+	}
+	if q.Index() != 1 || q.tracks[1].ID != "b" {
+		t.Fatalf("after Move(2,1): idx=%d tracks=%v", q.Index(), q.tracks)
+	}
+
+	// Move c (0) down to 2 -> [b, a, c], current moves to 0.
+	if !q.Move(0, 2) {
+		t.Fatal("Move(0, 2) = false")
+	}
+	if q.Index() != 0 || q.tracks[0].ID != "b" || q.tracks[2].ID != "c" {
+		t.Fatalf("after Move(0,2): idx=%d tracks=%v", q.Index(), q.tracks)
+	}
+}

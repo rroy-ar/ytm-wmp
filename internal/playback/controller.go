@@ -303,6 +303,8 @@ func (a *actor) handleCommand(cmd Command) {
 		a.cmdEnqueue(c.Tracks)
 	case RemoveIndices:
 		a.cmdRemoveIndices(c.Indices)
+	case MoveTrack:
+		a.cmdMoveTrack(c.From, c.To)
 	case SortQueue:
 		a.cmdSortQueue()
 	case UpdateTrack:
@@ -549,6 +551,15 @@ func (a *actor) cmdRemoveIndices(indices []int) {
 		a.stopActive()
 		return
 	}
+	a.publish()
+}
+
+func (a *actor) cmdMoveTrack(from, to int) {
+	if !a.q.Move(from, to) {
+		return
+	}
+	a.clearPrefetchState()
+	a.emit(QueueChanged{Len: a.q.Len(), Index: a.q.Index()})
 	a.publish()
 }
 

@@ -131,10 +131,14 @@ go run ./cmd/ytmctl artwork 0wRYvsfhsR8
 Controls:
 
 - Mouse: Previous, Play, Pause, Stop, Next, Eject (focuses search) transport
-  buttons; browser search bar (`GO`, `CLR`), result rows (click to select,
-  click selected row to play), `PLAY`/`QUEUE`/`ALL->Q` actions, mouse wheel
-  scroll, and now-playing artwork preview toggle.
-- Keyboard: `/` focus search, `Enter` submit search, `Esc` unfocus search/modal,
+  buttons; browser search bar (`GO`, `CLR`, middle/right-click search box to
+  paste), result rows (click to select, click selected row to play),
+  `PLAY`/`QUEUE`/`ALL->Q` actions, mouse wheel scroll, and now-playing artwork
+  preview toggle.
+- Keyboard: `/` focus search, `Ctrl+V` / `Super+V` / `Shift+Insert` paste into
+  search (URLs replace existing query and watch URLs resolve single tracks; on
+  Linux uses `xclip`, `xsel`, or `wl-paste`), `Ctrl+U` / `Ctrl+Backspace` clear
+  search while focused, `Enter` submit search, `Esc` unfocus search/modal,
   `Space` play/pause, `S` stop, `Z`/`B` previous/next, `Left`/`Right` seek ±5s,
   `Up`/`Down` volume ±10% (or move selection while searching), `R` cycle repeat
   (`off`/`all`/`one`), `H` toggle shuffle, `F1` debug overlay.

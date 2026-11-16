@@ -29,11 +29,12 @@ Implemented and covered by tests:
 - `internal/catalog` defines the `Catalog` interface, `IsPlaylistTarget`
   (playlist URLs/IDs plus YTM `/browse/...`, `VL...`, `MPREb_...`, and
   `RDCLAK5uy_...` targets), and a debounced, generation-tagged async
-  `Searcher`; `internal/catalog/ytmusic` implements pure-Go YouTube Music
-  InnerTube `WEB_REMIX` (`search`, `next`, `browse`) with response byte caps and
-  search/track TTL caches; `internal/catalog/ytdlp` implements `yt-dlp -J`
-  search, track metadata, and playlist extraction with stdout caps and
-  search/track caches.
+  `Searcher` (including direct single-track resolution via `Catalog.Track` for
+  pasted YouTube watch URLs); `internal/catalog/ytmusic` implements pure-Go
+  YouTube Music InnerTube `WEB_REMIX` (`search`, `next`, `browse`) with response
+  byte caps and search/track TTL caches; `internal/catalog/ytdlp` implements
+  `yt-dlp -J` search, track metadata, and playlist extraction with stdout caps
+  and search/track caches.
 - `internal/artwork` fetches, decodes (JPEG/PNG/WebP), resizes (64x64 list and
   300x300 now-playing), and caches thumbnails on disk and in an in-memory LRU.
 - `internal/skin` loads `.wsz`, `.zip`, or a directory of loose BMPs. It
@@ -45,10 +46,13 @@ Implemented and covered by tests:
   textures. Missing or truncated sprites become labelled magenta placeholders.
 - `internal/ui` has hot/active press/release input, all five main-window
   transport controls (previous, play, pause, stop, next) plus Eject/search
-  focus, keyboard shortcuts, named layout bounds (`layout.go`), `browserPanel`,
-  bounded background enrichment/artwork workers, lazy `300x300` texture uploads
-  with deterministic `Deallocate()`, and an F1 debug overlay showing state,
-  queue index, position, volume, shuffle/repeat, and hit areas.
+  focus, keyboard shortcuts, clipboard paste (`Ctrl+V` / `Super+V` /
+  `Shift+Insert` / middle- or right-click via OS clipboard tools in
+  `clipboard.go`) and `Ctrl+U` / `Ctrl+Backspace` search clearing, named layout
+  bounds (`layout.go`), `browserPanel`, bounded background enrichment/artwork
+  workers, lazy `300x300` texture uploads with deterministic `Deallocate()`, and
+  an F1 debug overlay showing state, queue index, position, volume,
+  shuffle/repeat, and hit areas.
 - `internal/playback` runs the Phase 2 actor (`Controller`), state machine,
   queue (history, shuffle bag, repeat off/one/all), request-generation tracking,
   seek-by-reopen (`baseOffset + sink.Position()`), zero-copy read-only
@@ -128,8 +132,8 @@ ADR 0002 to use a docked/stacked rack in Phase 4B. D7 and D9 arrive in Phases
 - InnerTube authentication/cookies until the public player is solid.
 - SQLite, an ORM, a dependency-injection container, or a message bus.
 - Gapless playback (deep rabbit hole), EQ DSP, or visualizers in v1.
-- Native file dialogs or clipboard support unless the Ebitengine limitation
-  becomes a real usability blocker.
+- Native file dialogs (browser search clipboard paste is implemented without
+  adding Go dependencies via OS clipboard utilities in `internal/ui/clipboard.go`).
 
 ## 4. Target architecture
 
@@ -1066,6 +1070,9 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `07de33b` feat(ui): support clipboard paste and line-clear in browser search
+- `be03d09` feat(catalog): resolve single-track YouTube watch URLs in Searcher
+- `b69554b` docs: record Phase 3B completion and document ytmusic catalog
 - `2c127ac` feat(cmd): add -catalog ytmusic|ytdlp flag to ytm-wmp and ytmctl
 - `fa6fd95` feat(catalog): implement ytmusic InnerTube WEB_REMIX catalog backend
 - `a340fcd` refactor(ui): extract browserPanel state and replace magic rects with layout constants
@@ -1126,5 +1133,8 @@ Status is marked for each:
    imports spread? **Open.** Recommendation: switch before the repo is public.
 9. **Browser window styling:** classic-skin-colored panel or full `gen.bmp`
    frame? **Open.** Recommendation: simple panel first; `gen.bmp` later.
-10. **Clipboard/file dialogs:** add a dependency or skip? **Decided for now:
-    skip.** Use typed paths and a scanned skin folder.
+10. **Clipboard/file dialogs:** add a dependency or skip? **Decided:** browser
+    search paste is implemented dependency-free via OS clipboard tools
+    (`xclip`/`xsel`/`wl-paste`, `pbpaste`, PowerShell `Get-Clipboard`); native
+    file dialogs remain skipped in favor of typed paths and a scanned skin
+    folder.

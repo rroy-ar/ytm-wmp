@@ -14,6 +14,7 @@ import (
 	"ytm-wmp/internal/m3u"
 	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
+	"ytm-wmp/internal/store"
 )
 
 type playlistMenuKind int
@@ -472,7 +473,7 @@ func (g *Game) savePlaylistM3U() {
 		return
 	}
 	content := m3u.Format(g.snap.Queue)
-	if err := atomicWriteFile(g.plM3UPath, []byte(content)); err != nil {
+	if err := store.AtomicWriteFile(g.plM3UPath, []byte(content)); err != nil {
 		g.setPlaylistStatus("SAVE ERR")
 		return
 	}

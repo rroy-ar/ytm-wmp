@@ -6,13 +6,13 @@ import (
 	"image/color"
 	"math"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"ytm-wmp/internal/skin"
+	"ytm-wmp/internal/store"
 )
 
 type eqPreset struct {
@@ -110,43 +110,9 @@ func (g *Game) saveEQNow() {
 	if err != nil {
 		return
 	}
-	if err := atomicWriteFile(g.eqPath, data); err != nil {
+	if err := store.AtomicWriteFile(g.eqPath, data); err != nil {
 		return
 	}
-}
-
-func atomicWriteFile(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
 }
 
 func clampEQVal(v float64) float64 {

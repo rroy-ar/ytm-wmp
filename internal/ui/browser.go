@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -60,6 +61,7 @@ type enrichFetchResult struct {
 
 type browserPanel struct {
 	searcher          *catalog.Searcher
+	clipboard         ClipboardFunc
 	searchDebounce    time.Duration
 	hasSearchDebounce bool
 	searchQuery       string
@@ -86,6 +88,9 @@ type browserPanel struct {
 
 func (g *Game) initBrowser() {
 	g.searchStatus = "Type query or paste URL"
+	if g.clipboard == nil {
+		g.clipboard = readSystemClipboard
+	}
 	g.artResults = make(chan artFetchResult, 32)
 	g.enrichResults = make(chan enrichFetchResult, 32)
 	g.sem = make(chan struct{}, maxBrowserWorkers)
@@ -462,6 +467,58 @@ func (g *Game) clearSearch() {
 	g.onSearchTextChanged()
 }
 
+func (g *Game) pasteSearch() {
+	g.focusSearch()
+	if g.clipboard == nil {
+		return
+	}
+	raw, err := g.clipboard(g.ctx)
+	if err != nil {
+		if errors.Is(err, errNoClipboardTool) {
+			g.searchStatus = "Paste err: install xclip/wl-paste"
+		} else {
+			g.searchStatus = truncateRunes("Err: "+err.Error(), 28)
+		}
+		return
+	}
+	clean := sanitizePasteText(raw)
+	if clean == "" {
+		if g.searchQuery == "" {
+			g.searchStatus = "Clipboard empty"
+		}
+		return
+	}
+	if isURLPaste(clean) {
+		g.searchQuery = clean
+	} else {
+		g.searchQuery += clean
+	}
+	g.onSearchTextChanged()
+}
+
+func isURLPaste(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func isCtrlOrMetaPressed() bool {
+	return ebiten.IsKeyPressed(ebiten.KeyControl) || ebiten.IsKeyPressed(ebiten.KeyMeta)
+}
+
+func isShiftPressed() bool {
+	return ebiten.IsKeyPressed(ebiten.KeyShift)
+}
+
+func isPasteJustPressed() bool {
+	return (isCtrlOrMetaPressed() && inpututil.IsKeyJustPressed(ebiten.KeyV)) ||
+		(isShiftPressed() && inpututil.IsKeyJustPressed(ebiten.KeyInsert))
+}
+
+func isClearLineJustPressed() bool {
+	return isCtrlOrMetaPressed() &&
+		(inpututil.IsKeyJustPressed(ebiten.KeyU) || inpututil.IsKeyJustPressed(ebiten.KeyBackspace))
+}
+
 func (g *Game) submitSearch() {
 	g.searchFocused = false
 	if g.searcher == nil {
@@ -498,14 +555,25 @@ func (g *Game) handleSearchKeys() {
 		g.submitSearch()
 		return
 	}
+	if isPasteJustPressed() {
+		g.pasteSearch()
+		return
+	}
+	if isClearLineJustPressed() {
+		g.clearSearch()
+		return
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyUp) {
 		g.moveResultSelection(-1)
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyDown) {
 		g.moveResultSelection(1)
 	}
-	if chars := ebiten.AppendInputChars(nil); len(chars) > 0 {
-		g.typeSearchRunes(chars)
+	ctrlWithoutAlt := ebiten.IsKeyPressed(ebiten.KeyControl) && !ebiten.IsKeyPressed(ebiten.KeyAlt)
+	if !ctrlWithoutAlt && !ebiten.IsKeyPressed(ebiten.KeyMeta) {
+		if chars := ebiten.AppendInputChars(nil); len(chars) > 0 {
+			g.typeSearchRunes(chars)
+		}
 	}
 	if dur := inpututil.KeyPressDuration(ebiten.KeyBackspace); dur == 1 || (dur > 20 && dur%3 == 0) {
 		g.backspaceSearch()

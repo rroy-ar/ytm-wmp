@@ -301,6 +301,93 @@ func TestBrowserPlaylistURLImport(t *testing.T) {
 	}
 }
 
+func TestBrowserPasteWatchURLAndSearchText(t *testing.T) {
+	ctrl := newFakeController()
+	cat := newFakeCatalog()
+	cat.searchTracks = []model.Track{{ID: "search-1", Title: "Daft Punk Track"}}
+
+	var (
+		trackMu    sync.Mutex
+		trackCalls []string
+	)
+	cat.trackFn = func(_ context.Context, id string) (model.Track, error) {
+		trackMu.Lock()
+		trackCalls = append(trackCalls, id)
+		trackMu.Unlock()
+		return model.Track{
+			ID:       id,
+			Title:    "Watch Track",
+			Artist:   "Artist",
+			Duration: 123 * time.Second,
+		}, nil
+	}
+
+	var (
+		clipText string
+		clipErr  error
+	)
+	g := NewGame(
+		context.Background(),
+		nil,
+		ctrl,
+		&fakeAudioLifecycle{},
+		WithCatalog(cat),
+		WithSearchDebounce(10*time.Millisecond),
+		WithClipboard(func(context.Context) (string, error) {
+			return clipText, clipErr
+		}),
+	)
+	defer g.Close()
+
+	// Pasting plain text appends sanitized text and triggers debounced search.
+	g.searchQuery = "daft "
+	clipText = "punk\r\n"
+	g.pasteSearch()
+
+	if !g.searchFocused {
+		t.Fatal("pasteSearch must focus search box")
+	}
+	if g.searchQuery != "daft punk" {
+		t.Fatalf("searchQuery = %q, want %q", g.searchQuery, "daft punk")
+	}
+	waitGameCondition(t, g, func() bool {
+		return len(g.results) == 1 && g.results[0].ID == "search-1"
+	})
+
+	// Pasting a YouTube watch URL replaces existing query and resolves via Catalog.Track.
+	wantURL := "https://www.youtube.com/watch?v=oz3LxqoyQFQ&list=RDoz3LxqoyQFQ&start_radio=1"
+	clipText = wantURL + "\n"
+	g.pasteSearch()
+
+	if g.searchQuery != wantURL {
+		t.Fatalf("searchQuery after URL paste = %q, want %q", g.searchQuery, wantURL)
+	}
+	waitGameCondition(t, g, func() bool {
+		return len(g.results) == 1 && g.results[0].ID == "oz3LxqoyQFQ"
+	})
+
+	trackMu.Lock()
+	gotTrackCalls := append([]string(nil), trackCalls...)
+	trackMu.Unlock()
+	if len(gotTrackCalls) != 1 || gotTrackCalls[0] != "oz3LxqoyQFQ" {
+		t.Fatalf("Track calls = %v, want [oz3LxqoyQFQ]", gotTrackCalls)
+	}
+
+	// Clipboard errors surface in searchStatus without crashing.
+	clipText = ""
+	clipErr = errNoClipboardTool
+	g.pasteSearch()
+	if !strings.Contains(g.searchStatus, "Paste err") {
+		t.Fatalf("searchStatus on missing tool = %q, want Paste err", g.searchStatus)
+	}
+
+	clipErr = fmt.Errorf("clipboard unavailable")
+	g.pasteSearch()
+	if !strings.Contains(g.searchStatus, "Err:") {
+		t.Fatalf("searchStatus on error = %q, want Err:", g.searchStatus)
+	}
+}
+
 func TestMetadataEnrichmentAndArtworkUploadAndDraw(t *testing.T) {
 	ctrl := newFakeController()
 	cat := newFakeCatalog()

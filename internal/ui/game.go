@@ -75,6 +75,11 @@ func WithSearchDebounce(d time.Duration) GameOption {
 	}
 }
 
+// WithClipboard overrides the clipboard reader used for browser search paste.
+func WithClipboard(fn ClipboardFunc) GameOption {
+	return func(g *Game) { g.clipboard = fn }
+}
+
 // Game is the Ebitengine application: a skinned main window plus the catalog
 // browser panel wired to the playback actor.
 type Game struct {
@@ -170,6 +175,11 @@ func (g *Game) Update() error {
 		if g.showArtModal && !pt.In(NowPlayingArtBounds) {
 			g.showArtModal = false
 		}
+	}
+	if !g.showArtModal &&
+		(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonMiddle) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight)) &&
+		image.Pt(cursorX, cursorY).In(SearchInputBounds) {
+		g.pasteSearch()
 	}
 
 	clicked := g.pointer.Update(cursorX, cursorY, mousePressed, allWidgets)
@@ -270,6 +280,10 @@ func (g *Game) onClick(id string) {
 }
 
 func (g *Game) handleKeys() {
+	if !g.showArtModal && isPasteJustPressed() {
+		g.pasteSearch()
+		return
+	}
 	if !g.searchFocused && inpututil.IsKeyJustPressed(ebiten.KeySlash) {
 		g.focusSearch()
 		return

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
@@ -84,6 +85,15 @@ func TestStartupTracksWithQueryAndPlaylist(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("startupTracks query = %+v, err=%v, want empty queue", got, err)
 	}
+
+	m3uFile := filepath.Join(t.TempDir(), "test.m3u")
+	if err := os.WriteFile(m3uFile, []byte("#EXTM3U\nhttps://www.youtube.com/watch?v=0wRYvsfhsR8\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = startupTracks(context.Background(), cat, nil, nil, m3uFile, "")
+	if err != nil || len(got) != 1 || got[0].ID != "0wRYvsfhsR8" {
+		t.Fatalf("startupTracks m3u = %+v, err=%v", got, err)
+	}
 }
 
 func TestNewCatalogSelection(t *testing.T) {
@@ -113,5 +123,12 @@ func TestNewCatalogSelection(t *testing.T) {
 
 	if _, _, err := newCatalog("bogus", ""); err == nil {
 		t.Fatal("newCatalog(bogus) succeeded, want error")
+	}
+
+	if opts := controllerOptions(catalogytmusic.New(), true); len(opts) != 2 {
+		t.Fatalf("controllerOptions(ytmusic, true) len = %d, want 2", len(opts))
+	}
+	if opts := controllerOptions(catalogytdlp.New(), true); len(opts) != 0 {
+		t.Fatalf("controllerOptions(ytdlp, true) len = %d, want 0", len(opts))
 	}
 }

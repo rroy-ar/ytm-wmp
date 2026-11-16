@@ -22,6 +22,7 @@ import (
 	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
 	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
 	"ytm-wmp/internal/deps"
+	"ytm-wmp/internal/m3u"
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
@@ -50,6 +51,7 @@ func run() error {
 	catalogFlag := flag.String("catalog", "ytmusic", "catalog backend: ytmusic or ytdlp")
 	queryFlag := flag.String("query", "", "initial catalog search query")
 	playlistFlag := flag.String("playlist", "", "YouTube/YTM playlist URL or ID to load at startup")
+	autoplayFlag := flag.Bool("autoplay", true, "queue YouTube Music radio suggestions when the queue ends")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
@@ -90,11 +92,16 @@ func run() error {
 	resolver := ytdlp.New(ytdlp.WithBinary(ytdlpTool.Path))
 	artCache := artwork.NewCache(artwork.WithCacheDir(artworkCacheDir()))
 	sink := audio.NewEbitenSink()
-	ctrl := playback.NewController(resolver, audio.Opener{FFmpeg: ffmpegTool.Path}, sink)
+	ctrl := playback.NewController(resolver, audio.Opener{FFmpeg: ffmpegTool.Path}, sink, controllerOptions(cat, *autoplayFlag)...)
 
 	tracks, err := startupTracks(ctx, cat, urlFlags, flag.Args(), *playlistFlag, *queryFlag)
 	if err != nil {
 		return err
+	}
+
+	var ytFallback catalog.Catalog
+	if catalogName != "ytdlp" {
+		ytFallback = catalogytdlp.New(catalogytdlp.WithBinary(ytdlpTool.Path))
 	}
 
 	game := ui.NewGame(
@@ -103,8 +110,13 @@ func run() error {
 		ctrl,
 		sink,
 		ui.WithCatalog(cat),
+		ui.WithYouTubeCatalog(ytFallback),
 		ui.WithArtwork(artCache),
 		ui.WithInitialQuery(*queryFlag),
+		ui.WithSkinName(filepath.Base(skinPath)),
+		ui.WithWindowResizer(ebiten.SetWindowSize),
+		ui.WithEQPath(userConfigPath("eq.json")),
+		ui.WithPlaylistPath(userConfigPath("playlist.m3u")),
 	)
 	defer game.Close()
 
@@ -126,6 +138,17 @@ func run() error {
 	return nil
 }
 
+func controllerOptions(cat catalog.Catalog, autoplay bool) []playback.Option {
+	radio, ok := cat.(playback.RadioProvider)
+	if !ok || radio == nil {
+		return nil
+	}
+	return []playback.Option{
+		playback.WithRadio(radio),
+		playback.WithAutoplay(autoplay),
+	}
+}
+
 func newCatalog(backend, ytdlpPath string) (catalog.Catalog, string, error) {
 	name := strings.ToLower(strings.TrimSpace(backend))
 	switch name {
@@ -140,12 +163,26 @@ func newCatalog(backend, ytdlpPath string) (catalog.Catalog, string, error) {
 
 func startupTracks(ctx context.Context, cat catalog.Catalog, flagTargets, extra []string, playlistTarget, initialQuery string) ([]model.Track, error) {
 	explicit := explicitTracks(flagTargets, extra)
-	if playlistTarget != "" && cat != nil {
-		plTracks, err := cat.Playlist(ctx, playlistTarget)
-		if err != nil {
-			return nil, fmt.Errorf("loading playlist %q: %w", playlistTarget, err)
+	if playlistTarget != "" {
+		lower := strings.ToLower(playlistTarget)
+		if strings.HasSuffix(lower, ".m3u") || strings.HasSuffix(lower, ".m3u8") {
+			f, err := os.Open(playlistTarget)
+			if err != nil {
+				return nil, fmt.Errorf("opening M3U playlist %q: %w", playlistTarget, err)
+			}
+			plTracks, parseErr := m3u.Parse(f)
+			_ = f.Close()
+			if parseErr != nil {
+				return nil, fmt.Errorf("parsing M3U playlist %q: %w", playlistTarget, parseErr)
+			}
+			explicit = append(explicit, plTracks...)
+		} else if cat != nil {
+			plTracks, err := cat.Playlist(ctx, playlistTarget)
+			if err != nil {
+				return nil, fmt.Errorf("loading playlist %q: %w", playlistTarget, err)
+			}
+			explicit = append(explicit, plTracks...)
 		}
-		explicit = append(explicit, plTracks...)
 	}
 	if len(explicit) > 0 {
 		return explicit, nil
@@ -154,6 +191,14 @@ func startupTracks(ctx context.Context, cat catalog.Catalog, flagTargets, extra 
 		return nil, nil
 	}
 	return []model.Track{{ID: defaultTarget}}, nil
+}
+
+func userConfigPath(name string) string {
+	dir, err := os.UserConfigDir()
+	if err != nil || dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "ytm-wmp", name)
 }
 
 func artworkCacheDir() string {

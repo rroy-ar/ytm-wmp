@@ -3,12 +3,12 @@
 A lightweight YouTube Music player with classic `.wsz` skin support, written in
 Go.
 
-Phase 3 (3A & 3B) adds catalog search (pure-Go YouTube Music InnerTube
-`WEB_REMIX` and `yt-dlp` backends selectable via `-catalog`), playlist import,
-track metadata enrichment, artwork caching, the `cmd/ytmctl` debug CLI, and an
-integrated browser panel below the skinned 275x116 main window (total logical
-canvas 275x348). Persistence and the full classic playlist/EQ skin system come
-in Phases 4-5.
+Phase 5 delivers full player UX and versioned atomic JSON persistence
+(`config.json`): cold-start restore of skin, volume, balance, queue, window
+layout, scale (`1X`/`2X`), audio buffer, artwork cache limits, tool paths, and
+last search; browser tabs (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`) with
+artist/album/playlist detail views; caret/IME search input; dismissible
+error/status toasts with missing-dependency alerts; and an in-app Settings panel.
 
 ## Project Status
 
@@ -60,15 +60,23 @@ in Phases 4-5.
   window bitmap marquee/time digits/volume/balance/seek/shuffle/repeat/EQ/PL
   controls, skinned `pledit.bmp` playlist editor with popup menus, and skinned
   `eqmain.bmp` equalizer with atomic `eq.json` persistence.
+- **Phase 5 — Full Player UX & Persistence**: added `internal/store` for
+  versioned, debounced, atomic `config.json` persistence (`TrackRef` queue,
+  skin, volume, balance, scale, audio buffer, artwork cache dir/cap, window
+  layout, last search, tool paths) and cold-start restore; added `TabCatalog`
+  (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`) and collection detail views with back
+  stack; added an in-browser `QUEUE` tab (`MoveTrack` reorder, remove, clear);
+  added `textField` caret navigation and Ebitengine `exp/textinput.Composer`
+  IME support; added dismissible error/status toasts and actionable missing
+  dependency alerts (`deps.CheckPath`); and built the in-app Settings panel
+  (`SET` / `F2`) for skin, `1X`/`2X` scale, audio buffer, artwork cache
+  stats/prune/clear, and `yt-dlp`/`ffmpeg` path configuration.
 
 ### What's next
 
-- **Phase 5 — Full Player UX & Persistence**: versioned atomic JSON persistence
-  for skin, volume, queue, and window layout (`config.json`); browser tabs
-  (songs/playlists/albums/artists); error toasts; and settings UI.
 - **Phase 6 (optional) & Phase 7**: EQ DSP, spectrum/oscilloscope visualizer,
-  shade/2x/`region.txt` modes, performance/allocation profiling, packaging, and
-  `v0.1` release hardening.
+  shade/`region.txt` modes, performance/allocation profiling, multi-skin corpus
+  verification, packaging, and `v0.1` release hardening.
 
 See [`docs/plan/winamp-ytm-player.md`](docs/plan/winamp-ytm-player.md) for the
 detailed plan and [`AGENTS.md`](AGENTS.md) for repo conventions.
@@ -86,8 +94,10 @@ detailed plan and [`AGENTS.md`](AGENTS.md) for repo conventions.
     libxi-dev libxrender-dev libgl1-mesa-dev
   ```
 
-Both tools are checked at startup and their versions are logged. A missing tool
-fails before the window opens with an install hint.
+Both tools are checked at startup (using configured Settings paths or `PATH`)
+and their versions are logged. If a tool is missing, the player still opens and
+surfaces an actionable dependency alert toast with a direct link to Settings so
+custom binary paths can be configured without a terminal.
 
 ## Run
 
@@ -150,16 +160,20 @@ Controls:
   `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus including M3U save/load, mini
   transport controls); browser search bar (`PL` toggle, `GO`, `CLR`,
   middle/right-click search box to paste), result rows, `PLAY`/`QUEUE`/`ALL->Q`/
-  `AUTO` actions, and now-playing artwork preview toggle.
-- Keyboard: `/` focus search, `E` toggle EQ window, `P` toggle Playlist/Browser
-  panel, `Delete` remove selected playlist rows, `Ctrl+A` select all playlist
-  rows, `Ctrl+V` / `Super+V` / `Shift+Insert` paste into search (or import M3U/URLs
-  when Playlist is focused), `Ctrl+U` / `Ctrl+Backspace` clear search while
-  focused, `Enter` submit search, `Esc` unfocus search/modal/menu,
-  `Space` play/pause, `S` stop, `Z`/`B` previous/next, `Left`/`Right` seek ±5s,
-  `Up`/`Down` volume ±10% (or move selection while searching), `R` cycle repeat
-  (`off`/`all`/`one`), `H` toggle shuffle, `A` toggle Up Next radio autoplay,
-  `F1` debug overlay.
+  `AUTO` actions, browser tabs (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`)
+  with playlist/album/artist detail views (`<BACK`), Settings panel (`SET`),
+  toast `[X]`/`SETTINGS` buttons, and now-playing artwork preview toggle.
+- Keyboard: `/` focus search (`Left`/`Right`/`Home`/`End`/`Delete`/`Backspace`
+  caret editing + IME), `E` toggle EQ window, `P` toggle Playlist/Browser
+  panel, `F2` toggle Settings panel, `Delete` remove selected playlist rows,
+  `Ctrl+A` select all playlist rows, `Ctrl+V` / `Super+V` / `Shift+Insert`
+  paste into search (or import M3U/URLs when Playlist is focused), `Ctrl+U` /
+  `Ctrl+Backspace` clear search while focused, `Enter` submit search, `Esc`
+  unfocus search/modal/menu or dismiss active toast, `Space` play/pause, `S`
+  stop, `Z`/`B` previous/next, `Left`/`Right` seek ±5s, `Up`/`Down` volume
+  ±10% (or move selection while searching), `R` cycle repeat (`off`/`all`/
+  `one`), `H` toggle shuffle, `A` toggle Up Next radio autoplay, `F1` debug
+  overlay.
 
 Press `F1` for the debug overlay: FPS/TPS, playback state, queue index,
 position, volume, shuffle/repeat, cursor, sprite destinations (cyan), and widget
@@ -190,7 +204,8 @@ Layout:
 | `internal/catalog` | `Catalog` interface, target classification, debounced `Searcher` |
 | `internal/catalog/ytdlp` | `yt-dlp -J` catalog implementation and in-memory caches |
 | `internal/catalog/ytmusic` | Pure-Go YouTube Music InnerTube `WEB_REMIX` catalog backend |
-| `internal/artwork` | thumbnail fetch, JPEG/PNG/WebP decode, resize, disk + LRU cache |
+| `internal/artwork` | thumbnail fetch, JPEG/PNG/WebP decode, resize, disk + LRU cache, disk stats/pruning |
+| `internal/store` | versioned atomic `config.json` persistence, migration, and debounced saver |
 | `internal/m3u` | `#EXTM3U` import/export of YouTube URLs and video IDs |
 | `internal/audio` | ffmpeg PCM source and Ebitengine audio sink |
 | `internal/playback` | actor controller, queue, state machine, error taxonomy |

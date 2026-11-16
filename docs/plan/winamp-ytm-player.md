@@ -1,9 +1,10 @@
 # Plan: from the PoC to a full YouTube Music player with classic `.wsz` skins
 
-Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, and 4
-(complete classic skin system) are complete; Phase 5 (full player UX and
-persistence) is next. This document is the single source of truth for
-architecture, status, and upcoming milestones.
+Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, 4
+(complete classic skin system), and 5 (full player UX and persistence) are
+complete; Phase 6 (optional fidelity chunks) and Phase 7 (hardening and v0.1
+release) remain. This document is the single source of truth for architecture,
+status, and upcoming milestones.
 
 Last updated: 2026-11-16.
 
@@ -86,9 +87,8 @@ Implemented and covered by tests:
 
 What is still missing:
 
-- Global config persistence (`config.json`: skin, volume, queue, window layout,
-  last search) and settings/tabs UX (Phase 5).
 - Real `.wsz` skin corpus smoke verification and cross-platform CI (Phase 7).
+- Optional Phase 6 fidelity chunks (EQ DSP, spectrum visualizer, shade/`region.txt`).
 
 Keep the good parts: process cancellation, the stale-URL retry, the PCM pipe,
 and the short time-to-first-audio. Do not rewrite them into a framework.
@@ -103,7 +103,7 @@ This is already a large v1. Do not add to it without cutting something else.
 - [x] Metadata, duration, and artwork for the current track.
 - [x] Classic `.wsz` main window, playlist, and equalizer chrome.
 - [x] Working skinned controls and playlist interaction.
-- [ ] Persist skin, volume, queue, playlists, and window positions.
+- [x] Persist skin, volume, queue, playlists, and window positions.
 - [x] Recover from expired URLs, network failures, and missing tools with
       actionable errors.
 - [x] Run on Linux first; keep Windows/macOS buildable.
@@ -166,7 +166,7 @@ internal/catalog/            Catalog interface, IsPlaylistTarget, debounced Sear
 internal/catalog/ytdlp/      Phase 3A yt-dlp -J catalog implementation
 internal/catalog/ytmusic/    Phase 3B pure-Go InnerTube WEB_REMIX catalog implementation
 internal/artwork/            thumbnail fetch/decode/resize/disk+LRU cache/placeholder
-internal/store/              planned config, queue, M3U, atomic writes
+internal/store/              versioned atomic config.json, TrackRef queue, debounced saver
 internal/testutil/           planned fake runner/source/skin helpers
 assets/dev-skin/             original loose BMPs; no copyrighted skins
 docs/adr/                    short decision records (0001, 0002, 0003)
@@ -665,32 +665,42 @@ Implemented in Phase 3A behind `catalog.Catalog`, `catalog.Searcher`, and
 
 ## 10. Persistence
 
-Not implemented yet; Phase 5.
+Implemented in Phase 5 (`internal/store`):
 
 ```go
 type Config struct {
-    Version    int
-    Skin       string
-    Volume     float64
-    Scale      int
-    Windows    map[string]WindowState
-    Queue      []TrackRef
-    QueueIndex int
-    Shuffle    bool
-    Repeat     string
-    LastSearch string
-    ToolPaths  struct{ YTDLP, FFmpeg string }
+    Version       int
+    Skin          string
+    Volume        float64
+    Balance       float64
+    Scale         int
+    BufferMs      int
+    CacheDir      string
+    CacheMaxMB    int
+    Windows       map[string]WindowState
+    BrowserMode   bool
+    TimeRemaining bool
+    Queue         []TrackRef
+    QueueIndex    int
+    Shuffle       bool
+    Repeat        string
+    Autoplay      bool
+    LastSearch    string
+    ToolPaths     ToolPaths
 }
 ```
 
 - Location: `os.UserConfigDir()/ytm-wmp/config.json`; cache/artwork under
   `os.UserCacheDir()/ytm-wmp/`.
-- Atomic write: temp file in the same directory, `Sync`, `Rename`. Handle
-  Windows rename-over-existing explicitly.
-- Debounce writes (e.g. 500 ms) and flush on exit/SIGTERM. Never write per frame.
-- Store video IDs and metadata, never signed stream URLs or cookies.
-- Version the schema and write a migration function even if v1 has only one
-  version; it is cheap now.
+- Atomic write: `store.AtomicWriteFile` writes to a temp file in the same
+  directory, `Sync`, `Close`, and `Rename` (with Windows replace fallback).
+  Reused by both `config.json` and `eq.json`/`playlist.m3u` saves.
+- Debounced writes (`500 ms` via `store.DebouncedSaver`) and immediate flush on
+  `Game.Close()`. Never writes per frame.
+- `TrackRef` stores normalized video IDs and display metadata, stripping signed
+  stream URLs (`googlevideo.com`) and never storing cookies.
+- Schema versioned (`CurrentVersion = 1`) with `Migrate` + `Sanitize` (clamping
+  volume/balance/scale/buffer/queue index and rejecting future versions).
 
 ## 11. Phases
 
@@ -706,7 +716,7 @@ Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are complete; Phase 4 is next.
 | 3A | `yt-dlp` catalog, artwork cache, browser panel | M | done |
 | 3B | Pure-Go YTM InnerTube `WEB_REMIX` catalog backend | S-M | done |
 | 4 | Complete classic skin system | L | done |
-| 5 | Full player UX and persistence | L | next |
+| 5 | Full player UX and persistence | L | done |
 | 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | optional |
 | 7 | Hardening and v0.1 release | M | planned |
 
@@ -927,22 +937,37 @@ skins never panic; debug overlay identifies sprites; fuzz passes.
 **Learn:** ZIP/BMP, sprite atlases, immediate-mode UI, hit testing, clipping,
 bitmap fonts, window management.
 
-### Phase 5 — Full player UX and persistence
+### Phase 5 — Full player UX and persistence (done)
 
 **Goal:** a real application, not a skinned demo.
 
-**Work**
+**Outcome:** completed. Added `internal/store` for versioned, debounced, atomic
+`config.json` persistence and wired cold-start restore into `cmd/ytm-wmp` and
+`internal/ui` (skin with dev-skin fallback warning, volume, balance, 1x/2x
+display scale, audio buffer size, artwork cache dir/cap, window layout,
+shuffle/repeat/autoplay, queue/index, last search, and tool paths); added
+`catalog.TabCatalog` (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`) with InnerTube and
+yt-dlp playlist search + detail drill-down back stack (`<BACK`, artist songs/
+albums toggle); added an in-browser `QUEUE` tab backed by `playback.MoveTrack`;
+added `textField` caret navigation and Ebitengine `exp/textinput.Composer` IME
+support (guarded behind `WithIME(true)` so headless tests remain safe); added
+dismissible error/status toasts with actionable missing-dependency alerts
+(`deps.CheckPath`, opening GUI gracefully instead of exiting on missing tools);
+and built the Settings panel (`SET` / `F2`) for skin, scale, audio buffer,
+artwork cache stats/prune/clear, and tool path overrides.
 
-- Browser tabs (songs/playlists; albums/artists only with InnerTube), detail
-  views, queue panel.
-- Search field focus/caret/IME; keyboard shortcuts (space, arrows, `/`, Enter,
-  Esc).
-- Error toasts and a status area; dependency messages.
-- Settings: skin path/picker, tool paths, cache location/size, scale, buffer.
-- Persistence: config, queue, window layout, volume, skin; atomic/debounced
-  writes; schema version.
-- M3U import/export of YouTube URLs/IDs.
-- Optional: MPRIS/media keys on Linux.
+**Work (all complete except optional Linux MPRIS, deferred to Phase 6E)**
+
+- Browser tabs (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`), detail views,
+  and queue panel.
+- Search field focus/caret/IME; keyboard shortcuts.
+- Error/warn/info toasts and dependency status alerts.
+- Settings: skin picker/reset, tool paths, cache location/size/prune/clear, 1x/2x
+  scale, audio buffer.
+- Persistence: `config.json` schema v1, migration, `TrackRef` queue, debounced
+  writes, and flush on exit.
+- M3U import/export of YouTube URLs/IDs (already landed in Phase 4).
+- Optional Linux MPRIS/media keys remain in Phase 6E.
 
 **Verify:** cold start restores last skin/volume/queue/layout; full mouse and
 keyboard operation; missing dependency has an actionable message; a full evening
@@ -1096,6 +1121,13 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `48a4eeb` feat(ui,cmd): wire config.json persistence, cold-start restore, and graceful startup
+- `a8ec50d` feat(ui): add error toasts, dependency alerts, and settings panel
+- `11fb3de` feat(ui,playback): add IME text field, browser tabs, detail views, and queue tab
+- `9b18db2` feat(catalog): add InnerTube tabs and collection detail browsing
+- `9628365` feat(deps,ytdlp,audio,artwork): add tool overrides, buffer size, and cache pruning
+- `7b7e253` feat(store): add versioned atomic config persistence and debounced saver
+- `c5bd326` docs: document main skin picker button in README and plan
 - `41b473d` feat(ui,cmd): add main skin button and async file picker skin reload
 - `9974b50` feat(skinview): add View.Deallocate to release GPU textures on reload
 - `f04e310` feat(assets): label skin button on dev-skin main.bmp
@@ -1143,8 +1175,9 @@ Recent trail as of this update (newest first):
 - `d4d9042` feat(skin): load classic .wsz archives and loose BMP directories
 - `1858514` refactor: land phase 0 architecture seams
 
-Next up is Phase 5 (full player UX and persistence: versioned `config.json` for
-skin/volume/queue/layout, browser tabs, error toasts, and settings UI).
+Next up is Phase 7 (hardening, multi-skin corpus smoke testing, performance
+profiling, and cross-platform CI for `v0.1`), with optional Phase 6 fidelity
+chunks (EQ DSP, spectrum visualizer, shade/`region.txt`, MPRIS).
 
 ## 15. Open questions
 

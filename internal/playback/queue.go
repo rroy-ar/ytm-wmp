@@ -2,6 +2,7 @@ package playback
 
 import (
 	"math/rand/v2"
+	"sort"
 	"strings"
 
 	"ytm-wmp/internal/model"
@@ -230,6 +231,130 @@ func (q *queue) Len() int      { return len(q.tracks) }
 func (q *queue) Shuffle() bool { return q.shuffle }
 func (q *queue) Repeat() RepeatMode {
 	return q.repeat
+}
+
+// Remove deletes tracks at indices, remapping the current cursor, history, and
+// shuffle bag. It reports whether anything changed and whether the active track
+// at q.index was removed.
+func (q *queue) Remove(indices []int) (changed, currentRemoved bool) {
+	if len(indices) == 0 || len(q.tracks) == 0 {
+		return false, false
+	}
+	removeSet := make(map[int]bool, len(indices))
+	for _, idx := range indices {
+		if idx >= 0 && idx < len(q.tracks) {
+			removeSet[idx] = true
+		}
+	}
+	if len(removeSet) == 0 {
+		return false, false
+	}
+
+	oldLen := len(q.tracks)
+	newIdx := make([]int, oldLen)
+	kept := make([]model.Track, 0, oldLen-len(removeSet))
+	for i, tr := range q.tracks {
+		if removeSet[i] {
+			newIdx[i] = -1
+			continue
+		}
+		newIdx[i] = len(kept)
+		kept = append(kept, tr)
+	}
+	q.tracks = kept
+
+	if len(q.tracks) == 0 {
+		currentRemoved = q.index >= 0
+		q.index = -1
+		q.history = nil
+		q.bag = nil
+		return true, currentRemoved
+	}
+
+	if q.index >= 0 && q.index < oldLen {
+		if removeSet[q.index] {
+			currentRemoved = true
+			// Pick the next surviving track after the removed position, or the last.
+			next := -1
+			for i := q.index + 1; i < oldLen; i++ {
+				if newIdx[i] >= 0 {
+					next = newIdx[i]
+					break
+				}
+			}
+			if next < 0 {
+				next = len(q.tracks) - 1
+			}
+			q.index = next
+		} else {
+			q.index = newIdx[q.index]
+		}
+	}
+
+	var nextHist []int
+	for _, h := range q.history {
+		if h >= 0 && h < oldLen && newIdx[h] >= 0 {
+			nextHist = append(nextHist, newIdx[h])
+		}
+	}
+	q.history = nextHist
+
+	if q.shuffle {
+		var nextBag []int
+		for _, b := range q.bag {
+			if b >= 0 && b < oldLen && newIdx[b] >= 0 && newIdx[b] != q.index {
+				nextBag = append(nextBag, newIdx[b])
+			}
+		}
+		q.bag = nextBag
+	}
+	return true, currentRemoved
+}
+
+// SortByTitle sorts queue tracks alphabetically by Artist then Title while
+// keeping the current track selected at its new index.
+func (q *queue) SortByTitle() bool {
+	if len(q.tracks) < 2 {
+		return false
+	}
+	type indexed struct {
+		track model.Track
+		old   int
+	}
+	items := make([]indexed, len(q.tracks))
+	for i, tr := range q.tracks {
+		items[i] = indexed{track: tr, old: i}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a := strings.ToLower(trackSortKey(items[i].track))
+		b := strings.ToLower(trackSortKey(items[j].track))
+		return a < b
+	})
+
+	newIdx := make([]int, len(items))
+	for i, it := range items {
+		q.tracks[i] = it.track
+		newIdx[it.old] = i
+	}
+	if q.index >= 0 && q.index < len(newIdx) {
+		q.index = newIdx[q.index]
+	}
+	q.history = nil
+	if q.shuffle {
+		q.rebuildBag(q.index)
+	}
+	return true
+}
+
+func trackSortKey(tr model.Track) string {
+	title := tr.Title
+	if title == "" {
+		title = tr.ID
+	}
+	if tr.Artist == "" {
+		return title
+	}
+	return tr.Artist + " - " + title
 }
 
 // UpdateTrack enriches matching tracks in the queue with non-empty metadata

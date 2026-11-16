@@ -167,3 +167,42 @@ func TestQueueEnqueueWhileShuffled(t *testing.T) {
 		t.Fatalf("visited %v, want all 4 tracks including enqueued ones", visited)
 	}
 }
+
+func TestQueueRemoveAndSort(t *testing.T) {
+	q := newQueue(nil)
+	q.Set([]model.Track{
+		{ID: "a", Artist: "Zed", Title: "Last"},
+		{ID: "b", Artist: "Alpha", Title: "First"},
+		{ID: "c", Artist: "Mid", Title: "Middle"},
+		{ID: "d", Artist: "Beta", Title: "Second"},
+	}, 2) // "c"
+
+	if !q.SortByTitle() {
+		t.Fatal("SortByTitle = false")
+	}
+	if cur, _ := q.Current(); cur.ID != "c" {
+		t.Fatalf("current after sort = %q, want c", cur.ID)
+	}
+	// Sorted order: Alpha(b), Beta(d), Mid(c), Zed(a) -> index 2 is c.
+	if q.Index() != 2 {
+		t.Fatalf("index after sort = %d, want 2", q.Index())
+	}
+
+	// Remove non-active index 0 ("b") and active index 2 ("c").
+	changed, curRemoved := q.Remove([]int{0, 2})
+	if !changed || !curRemoved {
+		t.Fatalf("Remove = (%v, %v), want (true, true)", changed, curRemoved)
+	}
+	if q.Len() != 2 {
+		t.Fatalf("Len = %d, want 2", q.Len())
+	}
+	if cur, _ := q.Current(); cur.ID != "a" {
+		t.Fatalf("current after removing active = %q, want a", cur.ID)
+	}
+
+	// Remove all remaining tracks.
+	changed, curRemoved = q.Remove([]int{0, 1})
+	if !changed || !curRemoved || q.Len() != 0 || q.Index() != -1 {
+		t.Fatalf("Remove all = changed=%v curRemoved=%v len=%d idx=%d", changed, curRemoved, q.Len(), q.Index())
+	}
+}

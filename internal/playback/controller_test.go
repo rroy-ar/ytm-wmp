@@ -665,6 +665,52 @@ func waitIndex(t *testing.T, ctrl *Controller, want int) {
 	t.Fatalf("timed out waiting for index %d (got %d)", want, ctrl.Snapshot().Index)
 }
 
+func TestControllerRemoveIndicesAndSortQueue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	ctrl := NewController(resolver, opener, sink)
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{
+		Tracks: []model.Track{
+			{ID: "t1", Artist: "Zed", Title: "Z"},
+			{ID: "t2", Artist: "Alpha", Title: "A"},
+			{ID: "t3", Artist: "Mid", Title: "M"},
+		},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitState(t, ctrl, StatePlaying)
+
+	// Sorting moves "t1" (Zed - Z) to index 2 without interrupting playback.
+	ctrl.Send(SortQueue{})
+	waitIndex(t, ctrl, 2)
+	if snap := ctrl.Snapshot(); snap.Track.ID != "t1" {
+		t.Fatalf("Track after sort = %q, want t1", snap.Track.ID)
+	}
+
+	// Removing the currently playing track advances to surviving track and starts it.
+	ctrl.Send(RemoveIndices{Indices: []int{2}})
+	waitCondition(t, func() bool {
+		snap := ctrl.Snapshot()
+		return len(snap.Queue) == 2 && snap.State == StatePlaying && snap.Track.ID != "t1"
+	})
+
+	// Removing all remaining tracks stops playback.
+	ctrl.Send(RemoveIndices{Indices: []int{0, 1}})
+	waitState(t, ctrl, StateIdle)
+	if snap := ctrl.Snapshot(); len(snap.Queue) != 0 || snap.Index != -1 {
+		t.Fatalf("after removing all: len=%d index=%d", len(snap.Queue), snap.Index)
+	}
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
 func waitDone(t *testing.T, ctrl *Controller) {
 	t.Helper()
 	select {
@@ -933,3 +979,237 @@ func (s *blockingSource) Close() error {
 func (s *blockingSource) Err() error            { return nil }
 func (s *blockingSource) Frames() int64         { return 10 }
 func (s *blockingSource) Done() <-chan struct{} { return s.closed }
+
+type fakeRadio struct {
+	mu      sync.Mutex
+	calls   []string
+	gate    chan struct{}
+	results map[string][]model.Track
+	err     error
+}
+
+func newFakeRadio(results map[string][]model.Track) *fakeRadio {
+	return &fakeRadio{results: results}
+}
+
+func (r *fakeRadio) Related(ctx context.Context, trackID string) ([]model.Track, error) {
+	if r.gate != nil {
+		select {
+		case <-r.gate:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	r.mu.Lock()
+	r.calls = append(r.calls, trackID)
+	err := r.err
+	tracks := append([]model.Track(nil), r.results[trackID]...)
+	r.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return tracks, nil
+}
+
+func (r *fakeRadio) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
+}
+
+func TestControllerAutoplayQueuesAndPlaysRadioOnQueueEnd(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	radio := newFakeRadio(map[string][]model.Track{
+		"seed-01": {
+			{ID: "seed-01", Title: "Seed Dup"},
+			{ID: "radio-01", Title: "Radio 1"},
+			{ID: "radio-01", Title: "Radio 1 Dup"},
+			{ID: "radio-02", Title: "Radio 2"},
+		},
+	})
+	ctrl := NewController(resolver, opener, sink, WithRadio(radio), WithAutoplay(true))
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{
+		Tracks:   []model.Track{{ID: "seed-01", Title: "Seed"}},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitTrackPlaying(t, ctrl, "seed-01")
+
+	sink.finishCurrent(nil)
+	waitTrackPlaying(t, ctrl, "radio-01")
+
+	snap := ctrl.Snapshot()
+	if !snap.Autoplay || snap.Index != 1 || len(snap.Queue) != 3 {
+		t.Fatalf("snap = autoplay:%v index:%d len:%d, want true, 1, 3", snap.Autoplay, snap.Index, len(snap.Queue))
+	}
+	if snap.Queue[1].ID != "radio-01" || snap.Queue[2].ID != "radio-02" {
+		t.Fatalf("unexpected queue after autoplay: %+v", snap.Queue)
+	}
+
+	// Disabling autoplay leaves queue at StateEnded when the last track finishes.
+	ctrl.Send(SetAutoplay{Enabled: false})
+	waitCondition(t, func() bool { return !ctrl.Snapshot().Autoplay })
+
+	sink.finishCurrent(nil)
+	waitTrackPlaying(t, ctrl, "radio-02")
+	sink.finishCurrent(nil)
+	waitState(t, ctrl, StateEnded)
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
+func TestControllerAutoplayPrefetchesRadioAndNextURLNearEnd(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	radio := newFakeRadio(map[string][]model.Track{
+		"seed-01": {
+			{ID: "radio-01", Title: "Radio 1"},
+			{ID: "radio-02", Title: "Radio 2"},
+		},
+	})
+	ctrl := NewController(
+		resolver,
+		opener,
+		sink,
+		WithRadio(radio),
+		WithAutoplay(true),
+		WithPrefetchWindow(30*time.Second),
+		WithTickInterval(5*time.Millisecond),
+	)
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{
+		Tracks:   []model.Track{{ID: "seed-01", Duration: 60 * time.Second}},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitTrackPlaying(t, ctrl, "seed-01")
+
+	sink.setPosition(40 * time.Second)
+	waitCondition(t, func() bool {
+		return radio.callCount() == 1 && resolver.resolvedTarget("radio-01") == 1
+	}, func() string {
+		return fmt.Sprintf("radio=%d resolved=%d", radio.callCount(), resolver.resolvedTarget("radio-01"))
+	})
+
+	// Finishing the track should reuse the prefetched radio queue without a second Related call.
+	sink.finishCurrent(nil)
+	waitTrackPlaying(t, ctrl, "radio-01")
+	if got := radio.callCount(); got != 1 {
+		t.Fatalf("radio.callCount() = %d, want 1", got)
+	}
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
+func TestControllerNextAtQueueEndTriggersAutoplay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	radio := newFakeRadio(map[string][]model.Track{
+		"seed-01": {{ID: "radio-01", Title: "Radio 1"}},
+	})
+	ctrl := NewController(resolver, opener, sink, WithRadio(radio), WithAutoplay(true))
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{
+		Tracks:   []model.Track{{ID: "seed-01", Title: "Seed"}},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitTrackPlaying(t, ctrl, "seed-01")
+
+	ctrl.Send(Next{})
+	waitTrackPlaying(t, ctrl, "radio-01")
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
+func TestControllerStopCancelsInFlightRadioFetch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	radio := newFakeRadio(map[string][]model.Track{
+		"seed-01": {{ID: "radio-01", Title: "Radio 1"}},
+	})
+	radio.gate = make(chan struct{})
+	ctrl := NewController(resolver, opener, sink, WithRadio(radio), WithAutoplay(true))
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetQueue{
+		Tracks:   []model.Track{{ID: "seed-01", Title: "Seed"}},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitTrackPlaying(t, ctrl, "seed-01")
+
+	sink.finishCurrent(nil)
+	waitState(t, ctrl, StateEnded)
+
+	// Stop before radio gate opens; releasing the gate must not enqueue or play radio-01.
+	ctrl.Send(Stop{})
+	waitState(t, ctrl, StateIdle)
+	close(radio.gate)
+	time.Sleep(25 * time.Millisecond)
+
+	snap := ctrl.Snapshot()
+	if snap.State != StateIdle || len(snap.Queue) != 1 {
+		t.Fatalf("after Stop during radio fetch: state=%s len=%d, want idle, 1", snap.State, len(snap.Queue))
+	}
+
+	cancel()
+	waitDone(t, ctrl)
+}
+
+func TestControllerRepeatTakesPrecedenceOverAutoplay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	radio := newFakeRadio(map[string][]model.Track{
+		"seed-01": {{ID: "radio-01", Title: "Radio 1"}},
+	})
+	ctrl := NewController(resolver, opener, sink, WithRadio(radio), WithAutoplay(true))
+	go ctrl.Run(ctx)
+
+	ctrl.Send(SetRepeat{Mode: RepeatOne})
+	ctrl.Send(SetQueue{
+		Tracks:   []model.Track{{ID: "seed-01", Title: "Seed"}},
+		Index:    0,
+		AutoPlay: true,
+	})
+	waitTrackPlaying(t, ctrl, "seed-01")
+
+	sink.finishCurrent(nil)
+	waitCondition(t, func() bool {
+		return resolver.resolvedTarget("seed-01") == 2 && ctrl.Snapshot().State == StatePlaying
+	})
+	if got := radio.callCount(); got != 0 {
+		t.Fatalf("radio.callCount() with RepeatOne = %d, want 0", got)
+	}
+
+	cancel()
+	waitDone(t, ctrl)
+}

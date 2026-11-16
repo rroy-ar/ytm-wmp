@@ -1579,7 +1579,4 @@ func tailRunes(s string, max int) string {
 	return string(r[len(r)-max:])
 }
 
-func (g *Game) drawSettings(_ *ebiten.Image, _ int) {}
-func (g *Game) onSettingsClick(_ string) bool       { return false }
-
 var _ = utf8.RuneCountInString

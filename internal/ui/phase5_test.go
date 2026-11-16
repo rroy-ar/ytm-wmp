@@ -2,12 +2,16 @@ package ui
 
 import (
 	"context"
+	"image"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"ytm-wmp/internal/artwork"
 	"ytm-wmp/internal/catalog"
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
@@ -191,4 +195,143 @@ func TestBrowserQueueTabActions(t *testing.T) {
 
 	screen := ebiten.NewImage(WindowWidth, WindowHeight)
 	g.Draw(screen)
+}
+
+func TestToastsAndMissingDependencyAlert(t *testing.T) {
+	g := NewGame(
+		context.Background(),
+		nil,
+		newFakeController(),
+		&fakeAudioLifecycle{},
+		WithToolStatus(
+			ToolStatus{Name: "yt-dlp", OK: false, Error: "yt-dlp missing"},
+			ToolStatus{Name: "ffmpeg", OK: true, Version: "7.0"},
+		),
+	)
+	defer g.Close()
+	if err := g.Update(); err != nil {
+		t.Fatal(err)
+	}
+
+	toast, ok := g.activeToast()
+	if !ok || toast.kind != toastError || !strings.Contains(toast.message, "yt-dlp") || toast.actionLabel != "SETTINGS" {
+		t.Fatalf("missing dep toast = (%+v, %v)", toast, ok)
+	}
+
+	// Draw toast over window.
+	g.Draw(ebiten.NewImage(WindowWidth, WindowHeight))
+
+	// Clicking SETTINGS action opens Settings panel.
+	g.onClick(WidgetToastAction)
+	if !g.showSettings || !g.browserMode || g.hidePL {
+		t.Fatalf("ToastAction did not open Settings (showSettings=%v browserMode=%v hidePL=%v)", g.showSettings, g.browserMode, g.hidePL)
+	}
+
+	// Info toast expires when deadline passes; dismiss clears active toast.
+	g.pushToast(toastInfo, "hello", 10*time.Millisecond)
+	g.expireToasts(time.Now().Add(time.Second))
+	if _, ok := g.activeToast(); ok {
+		t.Fatal("expired info toast still active")
+	}
+
+	g.setError("network failed")
+	if _, ok := g.activeToast(); !ok || g.errText == "" {
+		t.Fatal("setError did not publish toast")
+	}
+	g.onClick(WidgetToastDismiss)
+	if _, ok := g.activeToast(); ok || g.errText != "" {
+		t.Fatalf("dismiss did not clear error toast (errText=%q)", g.errText)
+	}
+}
+
+func TestSettingsScaleBufferCacheAndTools(t *testing.T) {
+	cacheDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cacheDir, "sample.img"), make([]byte, 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	artCache := artwork.NewCache(artwork.WithCacheDir(cacheDir))
+
+	var resizes []image.Point
+	var buffers []time.Duration
+	var appliedTools [][2]string
+
+	g := NewGame(
+		context.Background(),
+		nil,
+		newFakeController(),
+		&fakeAudioLifecycle{},
+		WithArtwork(artCache),
+		WithWindowResizer(func(w, h int) { resizes = append(resizes, image.Pt(w, h)) }),
+		WithBufferApplier(func(d time.Duration) { buffers = append(buffers, d) }),
+		WithToolStatus(
+			ToolStatus{Name: "yt-dlp", OK: false, Error: "missing"},
+			ToolStatus{Name: "ffmpeg", OK: true, ResolvedPath: "/usr/bin/ffmpeg", Version: "7.0"},
+		),
+		WithToolChecker(func(_ context.Context, name, override string) ToolStatus {
+			return ToolStatus{Name: name, Configured: override, ResolvedPath: override, Version: "2026.11", OK: override != ""}
+		}),
+		WithToolApplier(func(yt, ff string) {
+			appliedTools = append(appliedTools, [2]string{yt, ff})
+		}),
+	)
+	defer g.Close()
+	if err := g.Update(); err != nil {
+		t.Fatal(err)
+	}
+
+	g.onClick(WidgetBrowserSettings)
+	if !g.showSettings {
+		t.Fatal("WidgetBrowserSettings did not open Settings")
+	}
+
+	// Scale toggle 1x -> 2x -> 1x.
+	g.onClick(WidgetSettingsScale)
+	if g.scale != 2 {
+		t.Fatalf("scale = %d, want 2", g.scale)
+	}
+	if len(resizes) != 1 || resizes[0] != image.Pt(WindowWidth*2, WindowHeight*2) {
+		t.Fatalf("resizes = %v, want 2x", resizes)
+	}
+	g.onClick(WidgetSettingsScale)
+	if g.scale != 1 {
+		t.Fatalf("scale = %d, want 1", g.scale)
+	}
+
+	// Buffer cycle: 0 -> 100ms.
+	g.onClick(WidgetSettingsBuffer)
+	if g.bufferMs != 100 || len(buffers) != 1 || buffers[0] != 100*time.Millisecond {
+		t.Fatalf("bufferMs=%d buffers=%v", g.bufferMs, buffers)
+	}
+
+	// Cache stats & clear.
+	waitGameCondition(t, g, func() bool {
+		return g.cacheFiles == 1 && g.cacheBytes == 2048
+	})
+	g.onClick(WidgetSettingsCacheClear)
+	waitGameCondition(t, g, func() bool {
+		return g.cacheFiles == 0 && g.cacheBytes == 0
+	})
+
+	// Edit yt-dlp path inline and apply -> resolves OK, clears deps toast, updates applier.
+	g.onClick(WidgetSettingsYTDLPEdit)
+	if g.editTarget != editTargetYTDLP {
+		t.Fatalf("editTarget = %v, want editTargetYTDLP", g.editTarget)
+	}
+	g.editField.SetText("/opt/bin/yt-dlp")
+	g.onClick(WidgetSettingsInlineApply)
+	waitGameCondition(t, g, func() bool {
+		return g.ytdlpStatus.OK && g.ytdlpStatus.ResolvedPath == "/opt/bin/yt-dlp"
+	})
+	if len(appliedTools) == 0 || appliedTools[len(appliedTools)-1][0] != "/opt/bin/yt-dlp" {
+		t.Fatalf("appliedTools = %v", appliedTools)
+	}
+
+	// Render Settings panel + inline editor cleanly.
+	g.onClick(WidgetSettingsCacheEdit)
+	g.Draw(ebiten.NewImage(WindowWidth, WindowHeight))
+
+	g.onClick(WidgetSettingsClose)
+	if g.showSettings {
+		t.Fatal("WidgetSettingsClose did not close Settings")
+	}
 }

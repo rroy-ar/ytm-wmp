@@ -143,6 +143,34 @@ func WithIME(enabled bool) GameOption {
 	return func(g *Game) { g.imeEnabled = enabled }
 }
 
+// WithToolStatus seeds initial yt-dlp and ffmpeg dependency statuses.
+func WithToolStatus(ytdlp, ffmpeg ToolStatus) GameOption {
+	return func(g *Game) {
+		g.ytdlpStatus = ytdlp
+		g.ffmpegStatus = ffmpeg
+	}
+}
+
+// WithToolChecker registers the async dependency verification callback.
+func WithToolChecker(fn ToolCheckFunc) GameOption {
+	return func(g *Game) { g.toolChecker = fn }
+}
+
+// WithToolApplier registers the callback invoked when tool binary paths update.
+func WithToolApplier(fn func(ytdlpPath, ffmpegPath string)) GameOption {
+	return func(g *Game) { g.toolApplier = fn }
+}
+
+// WithBufferApplier registers the callback invoked when audio buffer size changes.
+func WithBufferApplier(fn func(time.Duration)) GameOption {
+	return func(g *Game) { g.bufferApplier = fn }
+}
+
+// WithDefaultSkinPath sets the bundled dev-skin path used by Settings reset.
+func WithDefaultSkinPath(path string) GameOption {
+	return func(g *Game) { g.defaultSkinPath = path }
+}
+
 type skinLoadResult struct {
 	path string
 	skin *skin.Skin
@@ -199,6 +227,8 @@ type Game struct {
 	browserPanel
 	playlistPanel
 	eqPanel
+	settingsState
+	toastState
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
@@ -226,6 +256,7 @@ func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink
 	g.initBrowser()
 	g.initPlaylist()
 	g.initEQ()
+	g.initSettings()
 	g.lastCanvasHeight = g.canvasHeight()
 
 	if ctrl != nil {
@@ -271,7 +302,11 @@ func (g *Game) syncWindowSize() {
 	}
 	g.lastCanvasHeight = h
 	if g.windowResizer != nil {
-		g.windowResizer(WindowWidth, h)
+		scale := g.scale
+		if scale != 2 {
+			scale = 1
+		}
+		g.windowResizer(WindowWidth*scale, h*scale)
 	}
 }
 
@@ -294,6 +329,7 @@ func (g *Game) activeWidgets() []Widget {
 			widgets = append(widgets, playlistWidgetsAt(g.plTop(), g.plMenu)...)
 		}
 	}
+	widgets = append(widgets, g.toastWidgets()...)
 	return widgets
 }
 
@@ -329,6 +365,8 @@ func (g *Game) Update() error {
 
 	g.drainEvents()
 	g.drainSkinLoads()
+	g.drainSettingsResults()
+	g.expireToasts(time.Now())
 	if g.ctrl != nil {
 		g.snap = g.ctrl.Snapshot()
 		g.hasSnap = true
@@ -470,8 +508,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	if g.errText != "" {
-		g.drawError(screen)
+	if _, ok := g.activeToast(); ok {
+		g.drawToast(screen)
 	}
 	if g.debug {
 		g.drawDebug(screen)
@@ -674,6 +712,9 @@ func (g *Game) Close() {
 }
 
 func (g *Game) onClick(id string) {
+	if g.onToastClick(id) {
+		return
+	}
 	if g.onEQClick(id) {
 		return
 	}
@@ -700,7 +741,7 @@ func (g *Game) onClick(id string) {
 		g.syncWindowSize()
 		return
 	case WidgetMainSkin:
-		g.errText = ""
+		g.clearError()
 		g.openSkinPicker()
 		return
 	}
@@ -711,18 +752,18 @@ func (g *Game) onClick(id string) {
 	slog.Debug("ui button clicked", "widget", id)
 	switch id {
 	case WidgetPrevious:
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Prev{})
 	case WidgetPlay:
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Play{})
 	case WidgetPause:
 		g.ctrl.Send(playback.Pause{})
 	case WidgetStop:
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Stop{})
 	case WidgetNext:
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Next{})
 	case WidgetMainShuffle:
 		next := !g.snap.Shuffle
@@ -740,6 +781,17 @@ func (g *Game) onClick(id string) {
 }
 
 func (g *Game) handleKeys() {
+	if g.handleSettingsKeys() {
+		return
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF2) {
+		if g.showSettings {
+			g.showSettings = false
+		} else {
+			g.openSettings()
+		}
+		return
+	}
 	if !g.showArtModal && isPasteJustPressed() {
 		if g.focusedPanel == panelPlaylist && !g.browserMode && !g.hidePL && !g.searchFocused {
 			g.importM3UFromClipboard()
@@ -760,8 +812,7 @@ func (g *Game) handleKeys() {
 		g.showArtModal = false
 		return
 	}
-	if g.errText != "" && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		g.errText = ""
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.dismissActiveToast() {
 		return
 	}
 	g.handlePlaylistKeys()
@@ -779,23 +830,23 @@ func (g *Game) handleKeys() {
 		case playback.StatePaused:
 			g.ctrl.Send(playback.Resume{})
 		default:
-			g.errText = ""
+			g.clearError()
 			g.ctrl.Send(playback.Play{})
 		}
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyS) {
 		slog.Debug("ui key", "key", "s")
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Stop{})
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyZ) {
 		slog.Debug("ui key", "key", "z")
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Prev{})
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyB) {
 		slog.Debug("ui key", "key", "b")
-		g.errText = ""
+		g.clearError()
 		g.ctrl.Send(playback.Next{})
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
@@ -853,7 +904,7 @@ func (g *Game) drainEvents() {
 				g.setError(e.Message)
 			case playback.StateChanged:
 				if e.To == playback.StateResolving || e.To == playback.StatePlaying || e.To == playback.StateIdle {
-					g.errText = ""
+					g.clearError()
 				}
 			case playback.TrackChanged:
 				if vid := model.NormalizeTrackID(e.Track.ID); vid != "" {
@@ -872,8 +923,16 @@ func (g *Game) drainEvents() {
 
 func (g *Game) setError(msg string) {
 	g.errText = msg
+	g.pushActionToast("error", toastError, msg, "", "", 0)
 	slog.Error("playback failed", "err", msg)
 }
+
+func (g *Game) clearError() {
+	g.errText = ""
+	g.clearToastSource("error")
+}
+
+func (g *Game) markConfigDirty() {}
 
 func (g *Game) openSkinPicker() {
 	if g.skinPickActive {
@@ -941,8 +1000,10 @@ func (g *Game) drainSkinLoads() {
 			g.skinPath = res.path
 			g.skinName = filepath.Base(res.path)
 			g.view = skinview.New(res.skin)
-			g.errText = ""
+			g.clearError()
+			g.markConfigDirty()
 			g.setTransientStatus("SKIN: " + strings.ToUpper(g.skinName))
+			g.pushToast(toastInfo, "Skin: "+g.skinName, defaultInfoToastTTL)
 			slog.Info("skin reloaded", "path", res.path, "sheets", res.skin.SheetNames())
 		default:
 			return
@@ -997,22 +1058,6 @@ func (g *Game) drawSprite(dst *ebiten.Image, name string, at image.Point) {
 	if g.view.Missing(name) {
 		// A silent skip makes coordinate bugs nearly impossible to find.
 		ebitenutil.DebugPrintAt(dst, name, at.X+1, at.Y+1)
-	}
-}
-
-func (g *Game) drawError(screen *ebiten.Image) {
-	const maxLines = 7
-	lines := wrapText(g.errText, 42)
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-		lines[maxLines-1] = strings.TrimSuffix(lines[maxLines-1], " ") + "..."
-	}
-
-	height := float32(10 + len(lines)*14)
-	vector.DrawFilledRect(screen, 5, 17, 265, height, color.RGBA{R: 0x50, G: 0x00, B: 0x00, A: 0xe0}, false)
-	vector.StrokeRect(screen, 5, 17, 265, height, 1, color.RGBA{R: 0xff, G: 0x90, B: 0x90, A: 0xff}, false)
-	for i, line := range lines {
-		ebitenutil.DebugPrintAt(screen, line, 10, 21+i*14)
 	}
 }
 

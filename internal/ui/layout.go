@@ -100,6 +100,28 @@ const (
 	WidgetBrowserQueue       = "browser.queue"
 	WidgetBrowserImportAll   = "browser.import_all"
 	WidgetBrowserAutoplay    = "browser.autoplay"
+
+	WidgetToastDismiss = "toast.dismiss"
+	WidgetToastAction  = "toast.action"
+
+	WidgetSettingsSkinPick     = "settings.skin.pick"
+	WidgetSettingsSkinDev      = "settings.skin.dev"
+	WidgetSettingsScale        = "settings.scale"
+	WidgetSettingsBuffer       = "settings.buffer"
+	WidgetSettingsCacheEdit    = "settings.cache.edit"
+	WidgetSettingsCacheMax     = "settings.cache.max"
+	WidgetSettingsCachePrune   = "settings.cache.prune"
+	WidgetSettingsCacheClear   = "settings.cache.clear"
+	WidgetSettingsYTDLPEdit    = "settings.ytdlp.edit"
+	WidgetSettingsYTDLPClr     = "settings.ytdlp.clr"
+	WidgetSettingsFFmpegEdit   = "settings.ffmpeg.edit"
+	WidgetSettingsFFmpegClr    = "settings.ffmpeg.clr"
+	WidgetSettingsRecheck      = "settings.recheck"
+	WidgetSettingsClose        = "settings.close"
+	WidgetSettingsInlineInput  = "settings.inline.input"
+	WidgetSettingsInlineApply  = "settings.inline.apply"
+	WidgetSettingsInlinePaste  = "settings.inline.paste"
+	WidgetSettingsInlineCancel = "settings.inline.cancel"
 )
 
 var eqBandWidgetIDs = [10]string{
@@ -153,6 +175,25 @@ var (
 	BrowserImportAllBounds = image.Rect(86, 326, 132, 344)
 	BrowserAutoplayBounds  = image.Rect(135, 326, 185, 344)
 	ArtModalBounds         = image.Rect(38, 124, 238, 324)
+
+	SettingsSkinPickBounds     = image.Rect(190, 132, 230, 147)
+	SettingsSkinDevBounds      = image.Rect(233, 132, 269, 147)
+	SettingsScaleBounds        = image.Rect(6, 166, 126, 183)
+	SettingsBufferBounds       = image.Rect(132, 166, 269, 183)
+	SettingsCacheEditBounds    = image.Rect(228, 189, 269, 204)
+	SettingsCacheMaxBounds     = image.Rect(6, 219, 120, 236)
+	SettingsCachePruneBounds   = image.Rect(124, 219, 194, 236)
+	SettingsCacheClearBounds   = image.Rect(198, 219, 269, 236)
+	SettingsYTDLPEditBounds    = image.Rect(192, 242, 232, 257)
+	SettingsYTDLPClrBounds     = image.Rect(235, 242, 269, 257)
+	SettingsFFmpegEditBounds   = image.Rect(192, 279, 232, 294)
+	SettingsFFmpegClrBounds    = image.Rect(235, 279, 269, 294)
+	SettingsRecheckBounds      = image.Rect(6, 322, 118, 342)
+	SettingsCloseBounds        = image.Rect(210, 322, 269, 342)
+	SettingsInlineInputBounds  = image.Rect(6, 298, 164, 315)
+	SettingsInlineApplyBounds  = image.Rect(166, 298, 202, 315)
+	SettingsInlinePasteBounds  = image.Rect(204, 298, 240, 315)
+	SettingsInlineCancelBounds = image.Rect(242, 298, 269, 315)
 )
 
 // placement is a sprite name and its destination in logical coordinates.
@@ -295,8 +336,4 @@ func (g *Game) browserWidgetsAt(plTop int) []Widget {
 		Widget{ID: WidgetBrowserAutoplay, Bounds: offsetRect(BrowserAutoplayBounds, dy)},
 	)
 	return out
-}
-
-func settingsWidgetsAt(_ int) []Widget {
-	return nil
 }

@@ -271,3 +271,42 @@ func TestExecRunnerBoundsStderr(t *testing.T) {
 		t.Fatalf("len(stderr) = %d, want %d", len(stderr), defaultStderrLimit)
 	}
 }
+
+func TestResolverSetBinaryUpdatesInvocation(t *testing.T) {
+	var seenBinary string
+	runner := &fakeRunner{fn: func(int) ([]byte, []byte, error) {
+		return []byte("https://stream.example/audio\n"), nil, nil
+	}}
+	// Wrap fakeRunner to capture the binary name passed to Output.
+	capRunner := &binaryCaptureRunner{inner: runner, onCall: func(bin string) { seenBinary = bin }}
+	resolver := New(WithRunner(capRunner), WithTTL(0))
+	if got := resolver.Binary(); got != defaultBinary {
+		t.Fatalf("initial Binary() = %q, want %q", got, defaultBinary)
+	}
+	resolver.SetBinary("/custom/bin/yt-dlp")
+	if got := resolver.Binary(); got != "/custom/bin/yt-dlp" {
+		t.Fatalf("updated Binary() = %q", got)
+	}
+	if _, err := resolver.Resolve(context.Background(), "dQw4w9WgXcQ"); err != nil {
+		t.Fatalf("Resolve = %v", err)
+	}
+	if seenBinary != "/custom/bin/yt-dlp" {
+		t.Fatalf("runner binary = %q, want /custom/bin/yt-dlp", seenBinary)
+	}
+	resolver.SetBinary("")
+	if got := resolver.Binary(); got != defaultBinary {
+		t.Fatalf("reset Binary() = %q, want %q", got, defaultBinary)
+	}
+}
+
+type binaryCaptureRunner struct {
+	inner  Runner
+	onCall func(string)
+}
+
+func (b *binaryCaptureRunner) Output(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+	if b.onCall != nil {
+		b.onCall(name)
+	}
+	return b.inner.Output(ctx, name, args...)
+}

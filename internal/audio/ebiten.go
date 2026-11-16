@@ -25,6 +25,10 @@ type pcmPlayer interface {
 	Volume() float64
 }
 
+type pcmBufferSizer interface {
+	SetBufferSize(time.Duration)
+}
+
 type playerFactory func(io.Reader) (pcmPlayer, error)
 
 // EbitenSink feeds the live ffmpeg PCM pipe to Ebitengine's audio context.
@@ -44,6 +48,7 @@ type EbitenSink struct {
 	pausePending bool
 	volumeSet    bool
 	volume       float64
+	bufferSize   time.Duration
 	lastPos      time.Duration
 
 	teardownMu sync.Mutex
@@ -130,6 +135,11 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	if s.volumeSet {
 		vol = s.volume
 	}
+	if s.bufferSize > 0 {
+		if bs, ok := player.(pcmBufferSizer); ok {
+			bs.SetBufferSize(s.bufferSize)
+		}
+	}
 	player.SetVolume(vol)
 	paused := startPaused || s.pausePending
 	s.pausePending = false
@@ -184,6 +194,32 @@ func (s *EbitenSink) Volume() float64 {
 		return 1
 	}
 	return s.volume
+}
+
+// SetBufferSize configures the audio player buffer duration (0 restores default).
+func (s *EbitenSink) SetBufferSize(d time.Duration) {
+	if d < 0 {
+		d = 0
+	} else if d > 5*time.Second {
+		d = 5 * time.Second
+	}
+	s.mu.Lock()
+	s.bufferSize = d
+	player := s.player
+	s.mu.Unlock()
+
+	if player != nil {
+		if bs, ok := player.(pcmBufferSizer); ok {
+			bs.SetBufferSize(d)
+		}
+	}
+}
+
+// BufferSize returns the configured audio player buffer duration (0 = default).
+func (s *EbitenSink) BufferSize() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bufferSize
 }
 
 // Position returns the playback position of the active stream (or the final

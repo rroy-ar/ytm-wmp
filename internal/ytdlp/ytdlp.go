@@ -173,6 +173,24 @@ func New(opts ...Option) *Resolver {
 	return r
 }
 
+// SetBinary updates the yt-dlp executable path used for subsequent resolutions.
+func (r *Resolver) SetBinary(path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = defaultBinary
+	}
+	r.mu.Lock()
+	r.binary = path
+	r.mu.Unlock()
+}
+
+// Binary returns the currently configured yt-dlp executable path.
+func (r *Resolver) Binary() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.binary
+}
+
 // Resolve returns a playable stream URL for target.
 //
 // target may be a YouTube video ID, a watch/short URL, or a yt-dlp search
@@ -189,6 +207,7 @@ func (r *Resolver) Resolve(ctx context.Context, target string) (model.StreamInfo
 
 	r.mu.Lock()
 	cached, ok := r.cache[key]
+	binary := r.binary
 	r.mu.Unlock()
 	if ok && now.Before(cached.expires) {
 		return cached.info, nil
@@ -201,7 +220,7 @@ func (r *Resolver) Resolve(ctx context.Context, target string) (model.StreamInfo
 		"-g", resolveTarget(target),
 	}
 
-	stdout, stderr, err := r.runner.Output(ctx, r.binary, args...)
+	stdout, stderr, err := r.runner.Output(ctx, binary, args...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return model.StreamInfo{}, ctxErr

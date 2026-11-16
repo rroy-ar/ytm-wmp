@@ -217,6 +217,23 @@ func New(opts ...Option) *Client {
 	return c
 }
 
+// SetBinary updates the yt-dlp executable path used for subsequent catalog commands.
+func (c *Client) SetBinary(path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = defaultBinary
+	}
+	c.mu.Lock()
+	c.binary = path
+	c.mu.Unlock()
+}
+
+func (c *Client) currentBinary() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.binary
+}
+
 // Search queries YouTube via `yt-dlp -J --flat-playlist ytsearchN:<query>`.
 func (c *Client) Search(ctx context.Context, query string, limit int) ([]model.Track, error) {
 	query = strings.TrimSpace(query)
@@ -248,7 +265,7 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]model.T
 		fmt.Sprintf("ytsearch%d:%s", limit, query),
 	}
 
-	stdout, stderr, err := c.runner.Output(ctx, c.binary, args...)
+	stdout, stderr, err := c.runner.Output(ctx, c.currentBinary(), args...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -304,7 +321,7 @@ func (c *Client) Track(ctx context.Context, idOrURL string) (model.Track, error)
 		target,
 	}
 
-	stdout, stderr, err := c.runner.Output(ctx, c.binary, args...)
+	stdout, stderr, err := c.runner.Output(ctx, c.currentBinary(), args...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return model.Track{}, ctxErr
@@ -346,7 +363,7 @@ func (c *Client) Playlist(ctx context.Context, idOrURL string) ([]model.Track, e
 		target,
 	}
 
-	stdout, stderr, err := c.runner.Output(ctx, c.binary, args...)
+	stdout, stderr, err := c.runner.Output(ctx, c.currentBinary(), args...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr

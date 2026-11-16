@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -221,7 +222,8 @@ func (c *Cache) Get(ctx context.Context, videoID, thumbnailURL string) (Bundle, 
 }
 
 func (c *Cache) loadOrFetch(ctx context.Context, id, thumbnailURL string) (Bundle, error) {
-	if diskPath := c.diskPath(id); diskPath != "" {
+	dir := c.CacheDir()
+	if diskPath := diskPathForDir(dir, id); diskPath != "" {
 		if raw, err := c.readDisk(diskPath); err == nil {
 			if b, err := decodeAndResize(id, raw); err == nil {
 				return b, nil
@@ -242,17 +244,145 @@ func (c *Cache) loadOrFetch(ctx context.Context, id, thumbnailURL string) (Bundl
 	if err != nil {
 		return Bundle{}, err
 	}
-	if diskPath := c.diskPath(id); diskPath != "" {
-		_ = c.writeDiskAtomic(diskPath, raw)
+	if dir := c.CacheDir(); dir != "" {
+		if diskPath := diskPathForDir(dir, id); diskPath != "" {
+			_ = writeDiskAtomic(dir, diskPath, raw)
+		}
 	}
 	return b, nil
 }
 
-func (c *Cache) diskPath(id string) string {
-	if c.cacheDir == "" {
+// CacheDir returns the currently configured on-disk cache directory.
+func (c *Cache) CacheDir() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cacheDir
+}
+
+// SetCacheDir updates the on-disk cache directory at runtime. Empty disables disk caching.
+func (c *Cache) SetCacheDir(dir string) {
+	c.mu.Lock()
+	c.cacheDir = strings.TrimSpace(dir)
+	c.mu.Unlock()
+}
+
+// DiskStats returns the number of cached thumbnail files and total bytes on disk.
+func (c *Cache) DiskStats() (files int, totalBytes int64, err error) {
+	dir := c.CacheDir()
+	if dir == "" {
+		return 0, 0, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, 0, nil
+		}
+		return 0, 0, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".img") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files++
+		totalBytes += info.Size()
+	}
+	return files, totalBytes, nil
+}
+
+// PruneDisk evicts the oldest cached .img files until total disk usage is <= maxBytes.
+// If maxBytes <= 0, PruneDisk is a no-op.
+func (c *Cache) PruneDisk(maxBytes int64) error {
+	if maxBytes <= 0 {
+		return nil
+	}
+	dir := c.CacheDir()
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	type fileRec struct {
+		path    string
+		size    int64
+		modTime time.Time
+	}
+	var recs []fileRec
+	var total int64
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".img") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		total += info.Size()
+		recs = append(recs, fileRec{
+			path:    filepath.Join(dir, entry.Name()),
+			size:    info.Size(),
+			modTime: info.ModTime(),
+		})
+	}
+	if total <= maxBytes {
+		return nil
+	}
+	sort.Slice(recs, func(i, j int) bool {
+		return recs[i].modTime.Before(recs[j].modTime)
+	})
+	for _, rec := range recs {
+		if total <= maxBytes {
+			break
+		}
+		if err := os.Remove(rec.path); err == nil || errors.Is(err, os.ErrNotExist) {
+			total -= rec.size
+		}
+	}
+	return nil
+}
+
+// ClearDisk removes all cached .img files from disk and clears the in-memory LRU.
+func (c *Cache) ClearDisk() error {
+	c.mu.Lock()
+	dir := c.cacheDir
+	c.lruMap = make(map[string]*list.Element)
+	c.lruList = list.New()
+	c.mu.Unlock()
+
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".img") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+func diskPathForDir(dir, id string) string {
+	if dir == "" {
 		return ""
 	}
-	return filepath.Join(c.cacheDir, safeFilename(id)+".img")
+	return filepath.Join(dir, safeFilename(id)+".img")
 }
 
 func (c *Cache) readDisk(path string) ([]byte, error) {
@@ -272,11 +402,11 @@ func (c *Cache) readDisk(path string) ([]byte, error) {
 	return raw, nil
 }
 
-func (c *Cache) writeDiskAtomic(dstPath string, data []byte) error {
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+func writeDiskAtomic(dir, dstPath string, data []byte) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(c.cacheDir, ".art-*")
+	tmp, err := os.CreateTemp(dir, ".art-*")
 	if err != nil {
 		return err
 	}

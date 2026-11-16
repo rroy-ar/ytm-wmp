@@ -23,18 +23,23 @@ type Tool struct {
 
 // MissingError reports a required tool that could not be found.
 type MissingError struct {
-	Name string
-	Err  error
+	Name         string
+	OverridePath string
+	Err          error
 }
 
 func (e *MissingError) Error() string {
-	hint := installHint(e.Name)
+	hint := InstallHint(e.Name)
+	if e.OverridePath != "" {
+		return fmt.Sprintf("required tool %q not found at %q: %v; %s", e.Name, e.OverridePath, e.Err, hint)
+	}
 	return fmt.Sprintf("required tool %q not found in PATH: %v; %s", e.Name, e.Err, hint)
 }
 
 func (e *MissingError) Unwrap() error { return e.Err }
 
-func installHint(name string) string {
+// InstallHint returns an actionable installation URL or guidance for name.
+func InstallHint(name string) string {
 	switch name {
 	case "yt-dlp":
 		return "install it from https://github.com/yt-dlp/yt-dlp#installation"
@@ -52,9 +57,20 @@ func installHint(name string) string {
 // parsing its version string, and the empty Version tells the caller to show
 // "unknown" rather than failing startup.
 func Check(ctx context.Context, name string) (Tool, error) {
-	path, err := exec.LookPath(name)
+	return CheckPath(ctx, name, "")
+}
+
+// CheckPath resolves overridePath when non-empty (falling back to PATH lookup
+// of name when empty) and asks the executable for its version.
+func CheckPath(ctx context.Context, name, overridePath string) (Tool, error) {
+	target := strings.TrimSpace(overridePath)
+	lookup := name
+	if target != "" {
+		lookup = target
+	}
+	path, err := exec.LookPath(lookup)
 	if err != nil {
-		return Tool{}, &MissingError{Name: name, Err: err}
+		return Tool{}, &MissingError{Name: name, OverridePath: target, Err: err}
 	}
 
 	versionCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

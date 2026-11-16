@@ -201,6 +201,33 @@ func TestEbitenSinkRejectsUninitializedFactory(t *testing.T) {
 	}
 }
 
+func TestEbitenSinkSetBufferSize(t *testing.T) {
+	player := newFakePlayer(&recorder{})
+	src := newSinkSource()
+	sink := newEbitenSink(factoryFor(player))
+
+	sink.SetBufferSize(250 * time.Millisecond)
+	if got := sink.BufferSize(); got != 250*time.Millisecond {
+		t.Fatalf("BufferSize = %v, want 250ms", got)
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- sink.Play(context.Background(), src) }()
+	waitPlayerStart(t, player)
+
+	if got := player.bufferSizeValue(); got != 250*time.Millisecond {
+		t.Fatalf("player bufferSize on Play = %v, want 250ms", got)
+	}
+	sink.SetBufferSize(400 * time.Millisecond)
+	if got := player.bufferSizeValue(); got != 400*time.Millisecond {
+		t.Fatalf("player bufferSize after SetBufferSize = %v, want 400ms", got)
+	}
+	src.finish()
+	if err := waitPlayback(t, errCh); err != nil {
+		t.Fatalf("Play = %v", err)
+	}
+}
+
 func TestEbitenSinkVolumeAndPosition(t *testing.T) {
 	player := newFakePlayer(&recorder{})
 	player.position = 12 * time.Second
@@ -289,6 +316,7 @@ type fakePlayer struct {
 	stops         int
 	playing       bool
 	volume        float64
+	bufferSize    time.Duration
 	position      time.Duration
 	startedSignal chan struct{}
 	startOnce     sync.Once
@@ -349,6 +377,18 @@ func (p *fakePlayer) Volume() float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.volume
+}
+
+func (p *fakePlayer) SetBufferSize(d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.bufferSize = d
+}
+
+func (p *fakePlayer) bufferSizeValue() time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.bufferSize
 }
 
 func (p *fakePlayer) playCount() int {

@@ -214,3 +214,62 @@ func TestPlaceholderReturnsRequestedSquareSize(t *testing.T) {
 		t.Fatalf("Placeholder size = %v, want %dx%d", p.Bounds().Size(), ListSize, ListSize)
 	}
 }
+
+func TestDiskStatsPruneAndClear(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	cache := NewCache(WithCacheDir(dir1))
+	if cache.CacheDir() != dir1 {
+		t.Fatalf("CacheDir() = %q, want %q", cache.CacheDir(), dir1)
+	}
+
+	now := time.Now()
+	files := []struct {
+		name string
+		size int
+		age  time.Duration
+	}{
+		{"old.img", 40, 3 * time.Hour},
+		{"mid.img", 40, 2 * time.Hour},
+		{"new.img", 40, 1 * time.Hour},
+	}
+	for _, f := range files {
+		p := filepath.Join(dir1, f.name)
+		if err := os.WriteFile(p, make([]byte, f.size), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		ts := now.Add(-f.age)
+		if err := os.Chtimes(p, ts, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count, total, err := cache.DiskStats()
+	if err != nil || count != 3 || total != 120 {
+		t.Fatalf("DiskStats = (%d, %d, %v), want (3, 120, nil)", count, total, err)
+	}
+
+	if err := cache.PruneDisk(80); err != nil {
+		t.Fatalf("PruneDisk = %v", err)
+	}
+	count, total, err = cache.DiskStats()
+	if err != nil || count != 2 || total != 80 {
+		t.Fatalf("DiskStats after prune = (%d, %d, %v), want (2, 80, nil)", count, total, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir1, "old.img")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("oldest file old.img was not pruned: err=%v", err)
+	}
+
+	if err := cache.ClearDisk(); err != nil {
+		t.Fatalf("ClearDisk = %v", err)
+	}
+	count, total, err = cache.DiskStats()
+	if err != nil || count != 0 || total != 0 {
+		t.Fatalf("DiskStats after clear = (%d, %d, %v), want (0, 0, nil)", count, total, err)
+	}
+
+	cache.SetCacheDir(dir2)
+	if cache.CacheDir() != dir2 {
+		t.Fatalf("updated CacheDir() = %q, want %q", cache.CacheDir(), dir2)
+	}
+}

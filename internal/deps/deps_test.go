@@ -66,6 +66,31 @@ func TestCheckMissingTool(t *testing.T) {
 	}
 }
 
+func TestCheckPathOverride(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture")
+	}
+	// Empty PATH ensures lookup only succeeds via explicit override path.
+	t.Setenv("PATH", t.TempDir())
+
+	toolDir := t.TempDir()
+	customPath := filepath.Join(toolDir, "custom-yt-dlp")
+	writeTool(t, toolDir, "custom-yt-dlp", "#!/bin/sh\necho 2026.11.01\n")
+
+	tool, err := CheckPath(context.Background(), "yt-dlp", customPath)
+	if err != nil {
+		t.Fatalf("CheckPath valid = %v", err)
+	}
+	if tool.Path != customPath || tool.Version != "2026.11.01" {
+		t.Fatalf("CheckPath = %+v, want path %q version 2026.11.01", tool, customPath)
+	}
+
+	_, err = CheckPath(context.Background(), "yt-dlp", filepath.Join(toolDir, "missing-bin"))
+	if !IsMissing(err) || !strings.Contains(err.Error(), "missing-bin") {
+		t.Fatalf("CheckPath missing err = %v, want MissingError mentioning override", err)
+	}
+}
+
 func TestVersionArgs(t *testing.T) {
 	tests := []struct {
 		path string

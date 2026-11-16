@@ -96,29 +96,7 @@ type Game struct {
 
 	errText string
 
-	searcher          *catalog.Searcher
-	searchDebounce    time.Duration
-	hasSearchDebounce bool
-	searchQuery       string
-	searchFocused     bool
-	searchStatus      string
-	results           []model.Track
-	selectedResult    int
-	scrollOffset      int
-	showArtModal      bool
-
-	artPlaceholder *ebiten.Image
-	artResults     chan artFetchResult
-	enrichResults  chan enrichFetchResult
-	artTex         map[string]artTextures
-	artOrder       []string
-	artPending     map[string]bool
-	artFailed      map[string]string
-	knownThumbURL  map[string]string
-	enriched       map[string]bool
-	enrichPending  map[string]bool
-	enrichFailed   map[string]time.Time
-	sem            chan struct{}
+	browserPanel
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
@@ -186,10 +164,10 @@ func (g *Game) Update() error {
 	wasMousePressed := g.pointer.Pressed()
 	if mousePressed && !wasMousePressed {
 		pt := image.Pt(cursorX, cursorY)
-		if g.searchFocused && !pt.In(image.Rect(6, 160, 198, 178)) && !pt.In(image.Rect(136, 89, 158, 105)) {
+		if g.searchFocused && !pt.In(SearchInputBounds) && !pt.In(EjectButtonBounds) {
 			g.searchFocused = false
 		}
-		if g.showArtModal && !pt.In(image.Rect(6, 130, 32, 156)) {
+		if g.showArtModal && !pt.In(NowPlayingArtBounds) {
 			g.showArtModal = false
 		}
 	}

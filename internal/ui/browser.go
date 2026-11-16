@@ -58,6 +58,32 @@ type enrichFetchResult struct {
 	err     error
 }
 
+type browserPanel struct {
+	searcher          *catalog.Searcher
+	searchDebounce    time.Duration
+	hasSearchDebounce bool
+	searchQuery       string
+	searchFocused     bool
+	searchStatus      string
+	results           []model.Track
+	selectedResult    int
+	scrollOffset      int
+	showArtModal      bool
+
+	artPlaceholder *ebiten.Image
+	artResults     chan artFetchResult
+	enrichResults  chan enrichFetchResult
+	artTex         map[string]artTextures
+	artOrder       []string
+	artPending     map[string]bool
+	artFailed      map[string]string
+	knownThumbURL  map[string]string
+	enriched       map[string]bool
+	enrichPending  map[string]bool
+	enrichFailed   map[string]time.Time
+	sem            chan struct{}
+}
+
 func (g *Game) initBrowser() {
 	g.searchStatus = "Type query or paste URL"
 	g.artResults = make(chan artFetchResult, 32)
@@ -106,7 +132,7 @@ func (g *Game) updateBrowser() {
 	_, wheelY := ebiten.Wheel()
 	if wheelY != 0 && len(g.results) > VisibleResultRows {
 		cx, cy := ebiten.CursorPosition()
-		if image.Pt(cx, cy).In(image.Rect(6, 180, 269, 324)) {
+		if image.Pt(cx, cy).In(ResultListBounds) {
 			if wheelY > 0 {
 				g.scrollResults(-1)
 			} else {
@@ -605,9 +631,8 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 
 	// Now-Playing strip.
 	vector.DrawFilledRect(screen, 4, 129, 267, 29, colSurfaceBg, false)
-	artRect := image.Rect(6, 130, 32, 156)
-	g.drawScaledImage(screen, g.artworkListImage(snap.Track), artRect)
-	vector.StrokeRect(screen, 5.5, 129.5, 27, 27, 1, colBorder, false)
+	g.drawScaledImage(screen, g.artworkListImage(snap.Track), NowPlayingArtBounds)
+	vector.StrokeRect(screen, float32(NowPlayingArtBounds.Min.X)-0.5, float32(NowPlayingArtBounds.Min.Y)-0.5, float32(NowPlayingArtBounds.Dx()+1), float32(NowPlayingArtBounds.Dy()+1), 1, colBorder, false)
 
 	title := trackDisplayTitle(snap.Track)
 	if title == "" {
@@ -626,8 +651,8 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 	if g.searchFocused {
 		inputBorder = colFocusBorder
 	}
-	vector.DrawFilledRect(screen, 6, 160, 192, 18, colSurfaceBg, false)
-	vector.StrokeRect(screen, 6.5, 160.5, 191, 17, 1, inputBorder, false)
+	vector.DrawFilledRect(screen, float32(SearchInputBounds.Min.X), float32(SearchInputBounds.Min.Y), float32(SearchInputBounds.Dx()), float32(SearchInputBounds.Dy()), colSurfaceBg, false)
+	vector.StrokeRect(screen, float32(SearchInputBounds.Min.X)+0.5, float32(SearchInputBounds.Min.Y)+0.5, float32(SearchInputBounds.Dx()-1), float32(SearchInputBounds.Dy()-1), 1, inputBorder, false)
 
 	inputLabel := "Search or playlist URL (/)"
 	if g.searchQuery != "" || g.searchFocused {
@@ -636,14 +661,14 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 			inputLabel += "_"
 		}
 	}
-	ebitenutil.DebugPrintAt(screen, inputLabel, 9, 161)
+	ebitenutil.DebugPrintAt(screen, inputLabel, SearchInputBounds.Min.X+3, SearchInputBounds.Min.Y+1)
 
-	g.drawButtonRect(screen, image.Rect(200, 160, 234, 178), WidgetSearchSubmit, "GO")
-	g.drawButtonRect(screen, image.Rect(236, 160, 269, 178), WidgetSearchClear, "CLR")
+	g.drawButtonRect(screen, SearchSubmitBounds, WidgetSearchSubmit, "GO")
+	g.drawButtonRect(screen, SearchClearBounds, WidgetSearchClear, "CLR")
 
 	// Results list.
-	vector.DrawFilledRect(screen, 6, 180, 263, VisibleResultRows*ResultRowHeight, colSurfaceBg, false)
-	vector.StrokeRect(screen, 6.5, 180.5, 262, VisibleResultRows*ResultRowHeight-1, 1, colBorder, false)
+	vector.DrawFilledRect(screen, float32(ResultListBounds.Min.X), float32(ResultListBounds.Min.Y), float32(ResultListBounds.Dx()), float32(ResultListBounds.Dy()), colSurfaceBg, false)
+	vector.StrokeRect(screen, float32(ResultListBounds.Min.X)+0.5, float32(ResultListBounds.Min.Y)+0.5, float32(ResultListBounds.Dx()-1), float32(ResultListBounds.Dy()-1), 1, colBorder, false)
 
 	if len(g.results) == 0 {
 		ebitenutil.DebugPrintAt(screen, "Press / or click search box", 16, 200)
@@ -655,7 +680,7 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 				break
 			}
 			tr := g.results[idx]
-			rowY := 180 + row*ResultRowHeight
+			rowY := ResultListBounds.Min.Y + row*ResultRowHeight
 
 			rowBg := colSurfaceBg
 			if idx == g.selectedResult {
@@ -663,7 +688,7 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 			} else if row%2 == 1 {
 				rowBg = colRowAltBg
 			}
-			vector.DrawFilledRect(screen, 7, float32(rowY), 261, ResultRowHeight, rowBg, false)
+			vector.DrawFilledRect(screen, float32(ResultListBounds.Min.X+1), float32(rowY), float32(ResultListBounds.Dx()-2), ResultRowHeight, rowBg, false)
 
 			thumbRect := image.Rect(9, rowY+2, 29, rowY+22)
 			g.drawScaledImage(screen, g.artworkListImage(tr), thumbRect)
@@ -675,9 +700,9 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 	}
 
 	// Bottom bar.
-	g.drawButtonRect(screen, image.Rect(6, 326, 54, 344), WidgetBrowserPlay, "PLAY")
-	g.drawButtonRect(screen, image.Rect(57, 326, 112, 344), WidgetBrowserQueue, "QUEUE")
-	g.drawButtonRect(screen, image.Rect(115, 326, 185, 344), WidgetBrowserImportAll, "ALL->Q")
+	g.drawButtonRect(screen, BrowserPlayBounds, WidgetBrowserPlay, "PLAY")
+	g.drawButtonRect(screen, BrowserQueueBounds, WidgetBrowserQueue, "QUEUE")
+	g.drawButtonRect(screen, BrowserImportAllBounds, WidgetBrowserImportAll, "ALL->Q")
 
 	queueSummary := fmt.Sprintf("Q:%d/%d", snap.Index+1, len(snap.Queue))
 	if len(snap.Queue) == 0 {
@@ -692,9 +717,8 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 
 func (g *Game) drawBrowserArtworkModal(screen *ebiten.Image, snap playback.Snapshot) {
 	vector.DrawFilledRect(screen, 0, MainWindowHeight, WindowWidth, BrowserHeight, colModalBg, false)
-	modalRect := image.Rect(38, 124, 238, 324)
-	g.drawScaledImage(screen, g.artworkNowPlayingImage(snap.Track), modalRect)
-	vector.StrokeRect(screen, 37.5, 123.5, 201, 201, 1, colFocusBorder, false)
+	g.drawScaledImage(screen, g.artworkNowPlayingImage(snap.Track), ArtModalBounds)
+	vector.StrokeRect(screen, float32(ArtModalBounds.Min.X)-0.5, float32(ArtModalBounds.Min.Y)-0.5, float32(ArtModalBounds.Dx()+1), float32(ArtModalBounds.Dy()+1), 1, colFocusBorder, false)
 	ebitenutil.DebugPrintAt(screen, truncateRunes(trackDisplayTitle(snap.Track), 38), 16, 328)
 }
 

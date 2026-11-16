@@ -44,6 +44,21 @@ const (
 	WidgetBrowserImportAll = "browser.import_all"
 )
 
+// Named bounds in 1x logical coordinates shared between hit testing, input
+// focus checks, and rendering.
+var (
+	EjectButtonBounds      = image.Rect(136, 89, 158, 105)
+	NowPlayingArtBounds    = image.Rect(6, 130, 32, 156)
+	SearchInputBounds      = image.Rect(6, 160, 198, 178)
+	SearchSubmitBounds     = image.Rect(200, 160, 234, 178)
+	SearchClearBounds      = image.Rect(236, 160, 269, 178)
+	ResultListBounds       = image.Rect(6, 180, 269, 324)
+	BrowserPlayBounds      = image.Rect(6, 326, 54, 344)
+	BrowserQueueBounds     = image.Rect(57, 326, 112, 344)
+	BrowserImportAllBounds = image.Rect(115, 326, 185, 344)
+	ArtModalBounds         = image.Rect(38, 124, 238, 324)
+)
+
 // placement is a sprite name and its destination in logical coordinates.
 type placement struct {
 	Sprite string
@@ -59,7 +74,7 @@ var mainPlacements = []placement{
 	{Sprite: skin.PauseButton, At: image.Pt(62, 88)},
 	{Sprite: skin.StopButton, At: image.Pt(85, 88)},
 	{Sprite: skin.NextButton, At: image.Pt(108, 88)},
-	{Sprite: skin.EjectButton, At: image.Pt(136, 89)},
+	{Sprite: skin.EjectButton, At: EjectButtonBounds.Min},
 }
 
 // mainWidgets follows the classic main-window transport coordinates.
@@ -69,7 +84,7 @@ var mainWidgets = []Widget{
 	{ID: WidgetPause, Bounds: image.Rect(62, 88, 85, 106)},
 	{ID: WidgetStop, Bounds: image.Rect(85, 88, 108, 106)},
 	{ID: WidgetNext, Bounds: image.Rect(108, 88, 131, 106)},
-	{ID: WidgetEject, Bounds: image.Rect(136, 89, 158, 105)},
+	{ID: WidgetEject, Bounds: EjectButtonBounds},
 }
 
 var resultRowWidgets = []string{
@@ -81,20 +96,25 @@ var resultRowWidgets = []string{
 	WidgetResultRow5,
 }
 
+func resultRowBounds(row int) image.Rectangle {
+	y := ResultListBounds.Min.Y + row*ResultRowHeight
+	return image.Rect(ResultListBounds.Min.X, y, ResultListBounds.Max.X, y+ResultRowHeight)
+}
+
 var browserWidgets = []Widget{
-	{ID: WidgetNowPlayingArt, Bounds: image.Rect(6, 130, 32, 156)},
-	{ID: WidgetSearchInput, Bounds: image.Rect(6, 160, 198, 178)},
-	{ID: WidgetSearchSubmit, Bounds: image.Rect(200, 160, 234, 178)},
-	{ID: WidgetSearchClear, Bounds: image.Rect(236, 160, 269, 178)},
-	{ID: WidgetResultRow0, Bounds: image.Rect(6, 180, 269, 204)},
-	{ID: WidgetResultRow1, Bounds: image.Rect(6, 204, 269, 228)},
-	{ID: WidgetResultRow2, Bounds: image.Rect(6, 228, 269, 252)},
-	{ID: WidgetResultRow3, Bounds: image.Rect(6, 252, 269, 276)},
-	{ID: WidgetResultRow4, Bounds: image.Rect(6, 276, 269, 300)},
-	{ID: WidgetResultRow5, Bounds: image.Rect(6, 300, 269, 324)},
-	{ID: WidgetBrowserPlay, Bounds: image.Rect(6, 326, 54, 344)},
-	{ID: WidgetBrowserQueue, Bounds: image.Rect(57, 326, 112, 344)},
-	{ID: WidgetBrowserImportAll, Bounds: image.Rect(115, 326, 185, 344)},
+	{ID: WidgetNowPlayingArt, Bounds: NowPlayingArtBounds},
+	{ID: WidgetSearchInput, Bounds: SearchInputBounds},
+	{ID: WidgetSearchSubmit, Bounds: SearchSubmitBounds},
+	{ID: WidgetSearchClear, Bounds: SearchClearBounds},
+	{ID: WidgetResultRow0, Bounds: resultRowBounds(0)},
+	{ID: WidgetResultRow1, Bounds: resultRowBounds(1)},
+	{ID: WidgetResultRow2, Bounds: resultRowBounds(2)},
+	{ID: WidgetResultRow3, Bounds: resultRowBounds(3)},
+	{ID: WidgetResultRow4, Bounds: resultRowBounds(4)},
+	{ID: WidgetResultRow5, Bounds: resultRowBounds(5)},
+	{ID: WidgetBrowserPlay, Bounds: BrowserPlayBounds},
+	{ID: WidgetBrowserQueue, Bounds: BrowserQueueBounds},
+	{ID: WidgetBrowserImportAll, Bounds: BrowserImportAllBounds},
 }
 
 var allWidgets = append(append([]Widget(nil), mainWidgets...), browserWidgets...)

@@ -55,7 +55,10 @@ Implemented and covered by tests:
   toggleable `EQ 275x116`, toggleable `Playlist/Browser 275x232`) with discrete
   OS window resizes on `EQ`/`PL` toggles, active/inactive titlebars, main
   window bitmap marquee/time digits/volume/balance/seek/shuffle/repeat/EQ/PL
-  controls, skinned `pledit.bmp` playlist editor (virtualized rows,
+  controls, a main-window skin picker button (`SK` to the right of `REP`) that
+  opens the OS file dialog (`zenity`/`yad`/`qarma`/`kdialog`, `osascript`, or
+  PowerShell `OpenFileDialog`) and hot-reloads `.wsz`/`.zip` skins off the UI
+  thread, skinned `pledit.bmp` playlist editor (virtualized rows,
   click/Ctrl-click/Shift-click selection, double-click play, scrollbar/wheel,
   `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus, M3U import/export), skinned
   `eqmain.bmp` equalizer (preamp + 10 bands, response graph, presets, atomic
@@ -1093,6 +1096,11 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `41b473d` feat(ui,cmd): add main skin button and async file picker skin reload
+- `9974b50` feat(skinview): add View.Deallocate to release GPU textures on reload
+- `f04e310` feat(assets): label skin button on dev-skin main.bmp
+- `48e479a` docs(agents): emphasize commit early and often
+- `fbfd889` docs: record radio autoplay and Phase 4 completion
 - `727ae4a` feat(cmd): wire autoplay, yt fallback, rack persistence, and M3U startup
 - `b96a4e0` feat(ui): implement docked Winamp rack, main controls, skinned playlist, and EQ
 - `47721ce` feat(skinview): cache slider frames, bitmap glyphs, and skin color configs
@@ -1164,8 +1172,8 @@ Status is marked for each:
    imports spread? **Open.** Recommendation: switch before the repo is public.
 9. **Browser window styling:** classic-skin-colored panel or full `gen.bmp`
    frame? **Open.** Recommendation: simple panel first; `gen.bmp` later.
-10. **Clipboard/file dialogs:** add a dependency or skip? **Decided:** browser
-    search paste is implemented dependency-free via OS clipboard tools
-    (`xclip`/`xsel`/`wl-paste`, `pbpaste`, PowerShell `Get-Clipboard`); native
-    file dialogs remain skipped in favor of typed paths and a scanned skin
-    folder.
+10. **Clipboard/file dialogs:** add a dependency or skip? **Decided:** both
+    browser search paste and the main-window skin file picker are implemented
+    dependency-free via OS tools (`xclip`/`xsel`/`wl-paste` +
+    `zenity`/`yad`/`qarma`/`kdialog`, `pbpaste`/`osascript`, and PowerShell
+    `Get-Clipboard`/`OpenFileDialog`).

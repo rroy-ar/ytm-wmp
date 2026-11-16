@@ -17,19 +17,45 @@ func TestDevSkinLoads(t *testing.T) {
 		t.Fatalf("Open(dev skin) = %v", err)
 	}
 
-	for _, name := range []string{MainBackground, TitlebarActive, TitlebarIdle, PlayButton, PlayButtonActive, PauseButton, PauseButtonActive} {
+	for _, name := range []string{
+		MainBackground, TitlebarActive, TitlebarIdle,
+		PlayButton, PlayButtonActive, PauseButton, PauseButtonActive,
+		MainShuffleButton, MainRepeatButton, MainEQButton, MainPlaylistButton,
+		MainPositionBackground, MainPositionThumb,
+		MainVolumeBackground, MainVolumeThumb,
+		MainBalanceBackground, MainBalanceThumb,
+		MainPlayingIndicator, MainStereoSelected,
+		PlaylistTopLeftCorner, PlaylistBottomLeftCorner, PlaylistBottomRightCorner,
+		EQWindowBackground, EQTitleBarSelected, EQSliderBackground, EQGraphBackground,
+	} {
 		if _, _, ok := s.Lookup(name); !ok {
 			t.Errorf("dev skin is missing sprite %q", name)
 		}
 	}
 
-	if img, _ := s.Sheet("main.bmp"); img.Bounds().Size() != image.Pt(275, 116) {
-		t.Errorf("main.bmp size = %v, want 275x116", img.Bounds().Size())
+	wantSizes := map[string]image.Point{
+		"main.bmp":     image.Pt(275, 116),
+		"cbuttons.bmp": image.Pt(136, 36),
+		"titlebar.bmp": image.Pt(312, 87),
+		"shufrep.bmp":  image.Pt(92, 85),
+		"posbar.bmp":   image.Pt(307, 10),
+		"volume.bmp":   image.Pt(68, 433),
+		"balance.bmp":  image.Pt(68, 433),
+		"playpaus.bmp": image.Pt(48, 9),
+		"monoster.bmp": image.Pt(56, 24),
+		"numbers.bmp":  image.Pt(90, 13),
+		"text.bmp":     image.Pt(155, 18),
+		"pledit.bmp":   image.Pt(280, 186),
+		"eqmain.bmp":   image.Pt(275, 315),
 	}
-	if img, _ := s.Sheet("cbuttons.bmp"); img.Bounds().Size() != image.Pt(136, 36) {
-		t.Errorf("cbuttons.bmp size = %v, want 136x36", img.Bounds().Size())
-	}
-	if img, _ := s.Sheet("titlebar.bmp"); img.Bounds().Size() != image.Pt(312, 87) {
-		t.Errorf("titlebar.bmp size = %v, want 312x87", img.Bounds().Size())
+	for sheet, want := range wantSizes {
+		img, ok := s.Sheet(sheet)
+		if !ok {
+			t.Errorf("dev skin missing sheet %q", sheet)
+			continue
+		}
+		if got := img.Bounds().Size(); got != want {
+			t.Errorf("%s size = %v, want %v", sheet, got, want)
+		}
 	}
 }

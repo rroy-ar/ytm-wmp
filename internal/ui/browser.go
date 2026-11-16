@@ -701,6 +701,7 @@ func isClearLineJustPressed() bool {
 func (g *Game) submitSearch() {
 	g.blurSearch()
 	g.syncSearchFieldFromQuery()
+	g.markConfigDirty()
 	if g.searcher == nil {
 		return
 	}
@@ -716,6 +717,7 @@ func (g *Game) submitSearch() {
 }
 
 func (g *Game) onSearchTextChanged() {
+	g.markConfigDirty()
 	if g.searcher == nil {
 		return
 	}
@@ -848,6 +850,7 @@ func (g *Game) onBrowserClick(id string) bool {
 		g.showSettings = false
 		g.browserMode = false
 		g.blurSearch()
+		g.markConfigDirty()
 		return true
 	}
 
@@ -937,6 +940,7 @@ func (g *Game) onBrowserClick(id string) bool {
 	case WidgetBrowserAutoplay:
 		if g.ctrl != nil {
 			g.ctrl.Send(playback.SetAutoplay{Enabled: !g.snap.Autoplay})
+			g.markConfigDirty()
 		}
 		return true
 	}

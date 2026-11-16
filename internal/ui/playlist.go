@@ -239,10 +239,12 @@ func (g *Game) onPlaylistClick(id string) bool {
 		g.plMenu = plMenuNone
 		g.hidePL = true
 		g.syncWindowSize()
+		g.markConfigDirty()
 		return true
 	case WidgetPlaylistModeSearch:
 		g.plMenu = plMenuNone
 		g.browserMode = true
+		g.markConfigDirty()
 		return true
 	case WidgetPlaylistAdd:
 		g.togglePlaylistMenu(plMenuAdd)

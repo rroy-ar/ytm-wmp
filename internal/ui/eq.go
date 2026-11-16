@@ -190,6 +190,7 @@ func (g *Game) onEQClick(id string) bool {
 	case WidgetEQClose:
 		g.showEQ = false
 		g.syncWindowSize()
+		g.markConfigDirty()
 		return true
 	case WidgetEQOn:
 		g.eqOn = !g.eqOn

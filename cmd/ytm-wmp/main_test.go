@@ -4,11 +4,15 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
 	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
 	"ytm-wmp/internal/model"
+	"ytm-wmp/internal/playback"
+	"ytm-wmp/internal/store"
+	"ytm-wmp/internal/ui"
 )
 
 func TestChooseSkinPrefersExplicitPath(t *testing.T) {
@@ -130,5 +134,70 @@ func TestNewCatalogSelection(t *testing.T) {
 	}
 	if opts := controllerOptions(catalogytdlp.New(), true); len(opts) != 0 {
 		t.Fatalf("controllerOptions(ytdlp, true) len = %d, want 0", len(opts))
+	}
+}
+
+func TestResolveStartupQueueRestoresPersistedAndRespectsCLI(t *testing.T) {
+	cfg := store.DefaultConfig()
+	cfg.Queue = []store.TrackRef{{ID: "FGBhQbmPwH8", Title: "One More Time"}, {ID: "0wRYvsfhsR8", Title: "Something About Us"}}
+	cfg.QueueIndex = 1
+
+	// When config exists and no CLI flags given, restore saved queue & index.
+	tracks, idx, err := resolveStartupQueue(context.Background(), nil, nil, nil, "", "", cfg, true)
+	if err != nil || len(tracks) != 2 || idx != 1 || tracks[0].ID != "FGBhQbmPwH8" {
+		t.Fatalf("restored queue = (%+v, %d, %v)", tracks, idx, err)
+	}
+
+	// Explicit -url overrides restored queue.
+	tracks, idx, err = resolveStartupQueue(context.Background(), nil, []string{"dQw4w9WgXcQ"}, nil, "", "", cfg, true)
+	if err != nil || len(tracks) != 1 || idx != 0 || tracks[0].ID != "dQw4w9WgXcQ" {
+		t.Fatalf("CLI override queue = (%+v, %d, %v)", tracks, idx, err)
+	}
+
+	// First run (no config file) seeds defaultTarget.
+	tracks, idx, err = resolveStartupQueue(context.Background(), nil, nil, nil, "", "", store.DefaultConfig(), false)
+	if err != nil || len(tracks) != 1 || idx != 0 || tracks[0].ID != defaultTarget {
+		t.Fatalf("first run queue = (%+v, %d, %v)", tracks, idx, err)
+	}
+}
+
+func TestLoadStartupSkinFallsBackWhenSavedSkinMissing(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir("../.."); err != nil {
+		t.Fatal(err)
+	}
+
+	s, usedPath, warn, err := loadStartupSkin("", "/nonexistent/missing.wsz")
+	if err != nil || s == nil {
+		t.Fatalf("loadStartupSkin fallback failed: %v", err)
+	}
+	if usedPath != devSkinPath || !strings.Contains(warn, "missing.wsz") {
+		t.Fatalf("fallback = path:%q warn:%q", usedPath, warn)
+	}
+}
+
+func TestCheckToolStatusReportsMissingDependencyActionably(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	st := checkToolStatus(context.Background(), "yt-dlp", "")
+	if st.OK || !strings.Contains(st.Error, "yt-dlp") || !strings.Contains(st.Hint, "yt-dlp") {
+		t.Fatalf("missing tool status = %+v", st)
+	}
+}
+
+func TestInitialCanvasHeightAndRepeatMode(t *testing.T) {
+	cfg := store.DefaultConfig()
+	if h := initialCanvasHeight(cfg); h != ui.MainWindowHeight+ui.PlaylistHeight {
+		t.Fatalf("default height = %d, want %d", h, ui.MainWindowHeight+ui.PlaylistHeight)
+	}
+	cfg.Windows[store.WindowEQ] = store.WindowState{Visible: true}
+	if h := initialCanvasHeight(cfg); h != ui.MainWindowHeight+ui.EQWindowHeight+ui.PlaylistHeight {
+		t.Fatalf("with EQ height = %d", h)
+	}
+	if parseRepeatMode("all") != playback.RepeatAll || parseRepeatMode("one") != playback.RepeatOne || parseRepeatMode("off") != playback.RepeatOff {
+		t.Fatal("parseRepeatMode mismatch")
 	}
 }

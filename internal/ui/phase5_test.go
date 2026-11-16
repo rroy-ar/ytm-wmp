@@ -16,6 +16,7 @@ import (
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
+	"ytm-wmp/internal/store"
 )
 
 type fakeUITabCatalog struct {
@@ -333,5 +334,71 @@ func TestSettingsScaleBufferCacheAndTools(t *testing.T) {
 	g.onClick(WidgetSettingsClose)
 	if g.showSettings {
 		t.Fatal("WidgetSettingsClose did not close Settings")
+	}
+}
+
+func TestConfigPersistenceColdStartRoundTrip(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	ctrl := newFakeController()
+	ctrl.setSnapshot(playback.Snapshot{
+		State:    playback.StatePaused,
+		Volume:   0.65,
+		Index:    1,
+		Shuffle:  true,
+		Repeat:   playback.RepeatOne,
+		Autoplay: false,
+		Queue: []model.Track{
+			{ID: "0wRYvsfhsR8", Title: "Something About Us", Artist: "Daft Punk", Duration: 232 * time.Second},
+			{ID: "FGBhQbmPwH8", Title: "One More Time", Artist: "Daft Punk", Duration: 320 * time.Second},
+		},
+	})
+
+	g1 := NewGame(
+		context.Background(),
+		nil,
+		ctrl,
+		&fakeAudioLifecycle{},
+		WithConfigPath(cfgPath),
+		WithSkinPath("/skins/retro.wsz"),
+	)
+	if err := g1.Update(); err != nil {
+		t.Fatal(err)
+	}
+	g1.onClick(WidgetMainEQ)
+	g1.onClick(WidgetMainTime)
+	g1.onClick(WidgetBrowserSettings)
+	g1.onClick(WidgetSettingsScale)
+	g1.onClick(WidgetSettingsBuffer)
+	g1.onClick(WidgetSettingsClose)
+	g1.searchQuery = "daft punk"
+	g1.browserMode = true
+	g1.markConfigDirty()
+	g1.Close()
+
+	loaded, existed, err := store.Load(cfgPath)
+	if err != nil || !existed {
+		t.Fatalf("store.Load = (%+v, %v, %v)", loaded, existed, err)
+	}
+	if loaded.Skin != "/skins/retro.wsz" || loaded.Volume != 0.65 || loaded.Scale != 2 || loaded.BufferMs != 100 {
+		t.Fatalf("persisted config scalars = %+v", loaded)
+	}
+	if !loaded.Windows[store.WindowEQ].Visible || !loaded.Windows[store.WindowPlaylist].Visible || !loaded.TimeRemaining || !loaded.BrowserMode {
+		t.Fatalf("persisted layout/flags = %+v", loaded)
+	}
+	if len(loaded.Queue) != 2 || loaded.QueueIndex != 1 || !loaded.Shuffle || loaded.Repeat != store.RepeatOne || loaded.Autoplay || loaded.LastSearch != "daft punk" {
+		t.Fatalf("persisted playback/search = %+v", loaded)
+	}
+
+	g2 := NewGame(
+		context.Background(),
+		nil,
+		newFakeController(),
+		&fakeAudioLifecycle{},
+		WithInitialConfig(loaded),
+	)
+	defer g2.Close()
+	if !g2.showEQ || g2.hidePL || !g2.browserMode || !g2.timeRemaining || g2.scale != 2 || g2.bufferMs != 100 || g2.searchQuery != "daft punk" {
+		t.Fatalf("restored Game state mismatch: showEQ=%v hidePL=%v browser=%v rem=%v scale=%d buf=%d query=%q",
+			g2.showEQ, g2.hidePL, g2.browserMode, g2.timeRemaining, g2.scale, g2.bufferMs, g2.searchQuery)
 	}
 }

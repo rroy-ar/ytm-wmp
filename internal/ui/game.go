@@ -23,6 +23,7 @@ import (
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
 	"ytm-wmp/internal/skin"
+	"ytm-wmp/internal/store"
 	"ytm-wmp/internal/ui/skinview"
 )
 
@@ -171,6 +172,37 @@ func WithDefaultSkinPath(path string) GameOption {
 	return func(g *Game) { g.defaultSkinPath = path }
 }
 
+// WithConfigPath configures where global application state is atomically persisted.
+func WithConfigPath(path string) GameOption {
+	return func(g *Game) { g.configPath = path }
+}
+
+// WithInitialConfig restores persisted UI, window, tool, and search state.
+func WithInitialConfig(cfg store.Config) GameOption {
+	return func(g *Game) {
+		cfg = store.Sanitize(cfg)
+		g.showEQ = cfg.Windows[store.WindowEQ].Visible
+		g.hidePL = !cfg.Windows[store.WindowPlaylist].Visible
+		if g.searchQuery == "" {
+			g.browserMode = cfg.BrowserMode
+			g.searchQuery = cfg.LastSearch
+		}
+		g.timeRemaining = cfg.TimeRemaining
+		g.balance = cfg.Balance
+		g.scale = cfg.Scale
+		g.bufferMs = cfg.BufferMs
+		g.cacheDir = cfg.CacheDir
+		g.cacheMaxMB = cfg.CacheMaxMB
+		g.ytdlpStatus.Configured = cfg.ToolPaths.YTDLP
+		g.ffmpegStatus.Configured = cfg.ToolPaths.FFmpeg
+	}
+}
+
+// WithStartupWarning displays a dismissible warning toast once the UI opens.
+func WithStartupWarning(msg string) GameOption {
+	return func(g *Game) { g.startupWarning = strings.TrimSpace(msg) }
+}
+
 type skinLoadResult struct {
 	path string
 	skin *skin.Skin
@@ -222,7 +254,9 @@ type Game struct {
 	transientMsg    string
 	transientUntil  time.Time
 
-	errText string
+	errText        string
+	startupWarning string
+	configSaver    *store.DebouncedSaver
 
 	browserPanel
 	playlistPanel
@@ -257,6 +291,12 @@ func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink
 	g.initPlaylist()
 	g.initEQ()
 	g.initSettings()
+	if g.configPath != "" {
+		g.configSaver = store.NewDebouncedSaver(g.configPath, store.DefaultSaveDebounce, nil)
+	}
+	if g.startupWarning != "" {
+		g.pushToast(toastWarn, g.startupWarning, defaultWarnToastTTL)
+	}
 	g.lastCanvasHeight = g.canvasHeight()
 
 	if ctrl != nil {
@@ -414,6 +454,7 @@ func (g *Game) Update() error {
 	g.updateSearchIME()
 	g.handleKeys()
 	g.maybeSaveEQ()
+	g.maybeSaveConfig()
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyF1) {
 		g.toggleDebug()
@@ -457,12 +498,16 @@ func (g *Game) updateMainSliders(cursorX int, pressed bool) {
 		g.setTransientStatus(fmt.Sprintf("VOLUME: %d%%", int(math.Round(vol*100))))
 		if g.ctrl != nil && math.Abs(vol-g.snap.Volume) > 0.005 {
 			g.ctrl.Send(playback.SetVolume{Volume: vol})
+			g.markConfigDirty()
 		}
 	case WidgetMainBalance:
 		ratio := sliderRatioX(cursorX, MainBalanceBounds, 14)
 		bal := ratio*2.0 - 1.0
 		if math.Abs(bal) < 0.06 {
 			bal = 0
+		}
+		if math.Abs(g.balance-bal) > 0.005 {
+			g.markConfigDirty()
 		}
 		g.balance = bal
 		switch {
@@ -685,6 +730,7 @@ func (g *Game) Layout(_, _ int) (int, int) {
 func (g *Game) Close() {
 	g.closeOnce.Do(func() {
 		g.saveEQNow()
+		g.flushConfigNow()
 		if g.searcher != nil {
 			g.searcher.Close()
 		}
@@ -730,15 +776,18 @@ func (g *Game) onClick(id string) {
 		return
 	case WidgetMainTime:
 		g.timeRemaining = !g.timeRemaining
+		g.markConfigDirty()
 		return
 	case WidgetMainEQ:
 		g.showEQ = !g.showEQ
 		g.syncWindowSize()
+		g.markConfigDirty()
 		return
 	case WidgetMainPL:
 		g.hidePL = !g.hidePL
 		g.plMenu = plMenuNone
 		g.syncWindowSize()
+		g.markConfigDirty()
 		return
 	case WidgetMainSkin:
 		g.clearError()
@@ -768,6 +817,7 @@ func (g *Game) onClick(id string) {
 	case WidgetMainShuffle:
 		next := !g.snap.Shuffle
 		g.ctrl.Send(playback.SetShuffle{Enabled: next})
+		g.markConfigDirty()
 		if next {
 			g.setTransientStatus("SHUFFLE: ON")
 		} else {
@@ -776,6 +826,7 @@ func (g *Game) onClick(id string) {
 	case WidgetMainRepeat:
 		next := (g.snap.Repeat + 1) % 3
 		g.ctrl.Send(playback.SetRepeat{Mode: next})
+		g.markConfigDirty()
 		g.setTransientStatus("REPEAT: " + strings.ToUpper(next.String()))
 	}
 }
@@ -871,20 +922,25 @@ func (g *Game) handleKeys() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		next := (snap.Repeat + 1) % 3
 		g.ctrl.Send(playback.SetRepeat{Mode: next})
+		g.markConfigDirty()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyH) {
 		g.ctrl.Send(playback.SetShuffle{Enabled: !snap.Shuffle})
+		g.markConfigDirty()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyA) {
 		g.ctrl.Send(playback.SetAutoplay{Enabled: !snap.Autoplay})
+		g.markConfigDirty()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyE) {
 		g.showEQ = !g.showEQ
 		g.syncWindowSize()
+		g.markConfigDirty()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
 		g.hidePL = !g.hidePL
 		g.syncWindowSize()
+		g.markConfigDirty()
 	}
 }
 
@@ -912,8 +968,12 @@ func (g *Game) drainEvents() {
 				}
 				g.maybeEnrichTrack(e.Track)
 				g.requestArtwork(e.Track)
+				g.markConfigDirty()
 			case playback.QueueChanged:
 				clear(g.enrichFailed)
+				g.markConfigDirty()
+			case playback.VolumeChanged:
+				g.markConfigDirty()
 			}
 		default:
 			return
@@ -932,7 +992,68 @@ func (g *Game) clearError() {
 	g.clearToastSource("error")
 }
 
-func (g *Game) markConfigDirty() {}
+func (g *Game) markConfigDirty() {
+	if g.configSaver != nil {
+		g.configSaver.MarkDirty()
+	}
+}
+
+func (g *Game) maybeSaveConfig() {
+	if g.configSaver == nil {
+		return
+	}
+	if err := g.configSaver.MaybeFlush(g.currentConfig); err != nil {
+		slog.Debug("config save failed", "err", err)
+	}
+}
+
+func (g *Game) flushConfigNow() {
+	if g.configSaver == nil {
+		return
+	}
+	if err := g.configSaver.Flush(g.currentConfig); err != nil {
+		slog.Debug("config flush failed", "err", err)
+	}
+}
+
+func (g *Game) currentConfig() store.Config {
+	snap := g.snap
+	if g.ctrl != nil {
+		snap = g.ctrl.Snapshot()
+	}
+	scale := g.scale
+	if scale != 2 {
+		scale = 1
+	}
+	cfg := store.Config{
+		Version:       store.CurrentVersion,
+		Skin:          g.skinPath,
+		Volume:        snap.Volume,
+		Balance:       g.balance,
+		Scale:         scale,
+		BufferMs:      g.bufferMs,
+		CacheDir:      g.cacheDir,
+		CacheMaxMB:    g.cacheMaxMB,
+		BrowserMode:   g.browserMode,
+		TimeRemaining: g.timeRemaining,
+		Windows: map[string]store.WindowState{
+			store.WindowMain:     {Visible: true},
+			store.WindowEQ:       {Visible: g.showEQ},
+			store.WindowPlaylist: {Visible: !g.hidePL},
+		},
+		Queue:      store.TrackRefsFromModel(snap.Queue),
+		QueueIndex: snap.Index,
+		Shuffle:    snap.Shuffle,
+		Repeat:     snap.Repeat.String(),
+		Autoplay:   snap.Autoplay,
+		LastSearch: g.searchQuery,
+		ToolPaths: store.ToolPaths{
+			YTDLP:  g.ytdlpStatus.Configured,
+			FFmpeg: g.ffmpegStatus.Configured,
+		},
+	}
+	return store.Sanitize(cfg)
+}
 
 func (g *Game) openSkinPicker() {
 	if g.skinPickActive {

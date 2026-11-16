@@ -327,3 +327,69 @@ func TestSearcherRoutesWatchURLToTrack(t *testing.T) {
 		t.Fatalf("fallback Search calls = %v, want [oz3LxqoyQFQ]", got)
 	}
 }
+
+func TestParseSearchTargetAndYouTubePrefixRouting(t *testing.T) {
+	cases := []struct {
+		raw       string
+		wantQuery string
+		wantYT    bool
+	}{
+		{"daft punk", "daft punk", false},
+		{"yt: obscure live set", "obscure live set", true},
+		{"YT:obscure live set", "obscure live set", true},
+		{"ytdlp: rare cover", "rare cover", true},
+		{"yt:   ", "", true},
+		{"https://www.youtube.com/watch?v=0wRYvsfhsR8", "https://www.youtube.com/watch?v=0wRYvsfhsR8", false},
+	}
+	for _, tc := range cases {
+		gotQuery, gotYT := ParseSearchTarget(tc.raw)
+		if gotQuery != tc.wantQuery || gotYT != tc.wantYT {
+			t.Errorf("ParseSearchTarget(%q) = (%q, %v), want (%q, %v)", tc.raw, gotQuery, gotYT, tc.wantQuery, tc.wantYT)
+		}
+	}
+
+	primary := &fakeCatalog{}
+	ytCat := &fakeCatalog{}
+	s := NewSearcher(primary, WithYouTubeCatalog(ytCat), WithDebounce(0))
+	defer s.Close()
+
+	// Prefix with empty remainder emits a clean empty result without calling either catalog.
+	s.Submit("yt: ")
+	select {
+	case res := <-s.Results():
+		if res.Query != "" || res.Err != nil || len(res.Tracks) != 0 {
+			t.Fatalf("yt: empty remainder = %+v, want empty result", res)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for empty prefix result")
+	}
+
+	// Prefixed search routes to ytCat with stripped query.
+	s.Submit("yt: rare remix")
+	select {
+	case res := <-s.Results():
+		if res.Err != nil || !res.IsYouTube || len(res.Tracks) != 1 || res.Tracks[0].Title != "rare remix" {
+			t.Fatalf("yt: result = %+v, want IsYouTube=true title='rare remix'", res)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for yt: search result")
+	}
+
+	// Unprefixed search stays on primary catalog.
+	s.Submit("normal song")
+	select {
+	case res := <-s.Results():
+		if res.Err != nil || res.IsYouTube || len(res.Tracks) != 1 || res.Tracks[0].Title != "normal song" {
+			t.Fatalf("normal result = %+v, want IsYouTube=false title='normal song'", res)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for normal search result")
+	}
+
+	if got := ytCat.searchQueries(); len(got) != 1 || got[0] != "rare remix" {
+		t.Fatalf("ytCat searches = %v, want [rare remix]", got)
+	}
+	if got := primary.searchQueries(); len(got) != 1 || got[0] != "normal song" {
+		t.Fatalf("primary searches = %v, want [normal song]", got)
+	}
+}

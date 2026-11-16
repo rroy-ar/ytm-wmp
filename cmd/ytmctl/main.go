@@ -88,6 +88,8 @@ func executeWithFactory(ctx context.Context, args []string, stdout, stderr io.Wr
 		return runTrack(ctx, subArgs, stdout, stderr, sel)
 	case "playlist":
 		return runPlaylist(ctx, subArgs, stdout, stderr, sel)
+	case "radio":
+		return runRadio(ctx, subArgs, stdout, stderr, sel)
 	case "artwork":
 		return runArtwork(ctx, subArgs, stdout, stderr, sel, art)
 	default:
@@ -240,6 +242,40 @@ func runPlaylist(ctx context.Context, args []string, stdout, stderr io.Writer, s
 	return writeTracks(stdout, tracks)
 }
 
+func runRadio(ctx context.Context, args []string, stdout, stderr io.Writer, sel catalogSelection) error {
+	fs := flag.NewFlagSet("radio", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	limit := fs.Int("limit", 20, "maximum radio tracks to display")
+	asJSON := fs.Bool("json", false, "output JSON")
+	catFlag := fs.String("catalog", sel.defaultBackend, "catalog backend: ytmusic or ytdlp")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: ytmctl radio [-catalog ytmusic] [-limit 20] [-json] <track-id-or-url>")
+	}
+	cat, err := sel.resolve(ctx, fs, *catFlag)
+	if err != nil {
+		return err
+	}
+	radio, ok := cat.(catalog.RadioProvider)
+	if !ok {
+		return errors.New("radio recommendations are only supported with -catalog ytmusic")
+	}
+
+	tracks, err := radio.Related(ctx, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *limit > 0 && len(tracks) > *limit {
+		tracks = tracks[:*limit]
+	}
+	if *asJSON {
+		return writeJSON(stdout, tracks)
+	}
+	return writeTracks(stdout, tracks)
+}
+
 func runArtwork(ctx context.Context, args []string, stdout, stderr io.Writer, sel catalogSelection, art *artwork.Cache) error {
 	fs := flag.NewFlagSet("artwork", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -334,5 +370,5 @@ func defaultArtworkDir() string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: ytmctl [-catalog ytmusic|ytdlp] <search|track|playlist|artwork> [flags] <args>")
+	fmt.Fprintln(w, "usage: ytmctl [-catalog ytmusic|ytdlp] <search|track|playlist|radio|artwork> [flags] <args>")
 }

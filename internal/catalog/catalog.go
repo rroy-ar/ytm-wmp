@@ -27,6 +27,13 @@ type Catalog interface {
 	Track(ctx context.Context, id string) (model.Track, error)
 }
 
+// RadioProvider is an optional capability implemented by Catalog backends that
+// can generate unauthenticated Up Next / radio track recommendations from a
+// seed track ID.
+type RadioProvider interface {
+	Related(ctx context.Context, trackID string) ([]model.Track, error)
+}
+
 // IsPlaylistTarget reports whether input looks like a YouTube/YouTube Music
 // playlist URL or bare playlist ID rather than a single-track target or search
 // query.

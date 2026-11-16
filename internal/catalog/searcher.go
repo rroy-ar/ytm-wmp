@@ -23,11 +23,20 @@ type SearchResult struct {
 	Query      string
 	Tracks     []model.Track
 	IsPlaylist bool
+	IsYouTube  bool
 	Err        error
 }
 
 // SearcherOption configures a Searcher.
 type SearcherOption func(*Searcher)
+
+// WithYouTubeCatalog sets the fallback Catalog used for `yt:` / `ytdlp:`
+// prefixed queries (for tracks only found on regular YouTube).
+func WithYouTubeCatalog(cat Catalog) SearcherOption {
+	return func(s *Searcher) {
+		s.ytCat = cat
+	}
+}
 
 // WithDebounce overrides the typing debounce duration.
 func WithDebounce(d time.Duration) SearcherOption {
@@ -51,6 +60,7 @@ func WithLimit(limit int) SearcherOption {
 // imports so the UI never blocks or renders stale results.
 type Searcher struct {
 	cat      Catalog
+	ytCat    Catalog
 	debounce time.Duration
 	limit    int
 	results  chan SearchResult
@@ -204,28 +214,60 @@ func (s *Searcher) startWorkerLocked(gen uint64, q string) {
 	go s.runWorker(ctx, cancel, gen, q)
 }
 
+// ParseSearchTarget splits an optional `yt:` or `ytdlp:` prefix from rawQuery,
+// returning the trimmed target query and whether the regular YouTube catalog
+// was requested.
+func ParseSearchTarget(rawQuery string) (target string, isYouTube bool) {
+	q := strings.TrimSpace(rawQuery)
+	lower := strings.ToLower(q)
+	switch {
+	case strings.HasPrefix(lower, "yt:"):
+		return strings.TrimSpace(q[3:]), true
+	case strings.HasPrefix(lower, "ytdlp:"):
+		return strings.TrimSpace(q[6:]), true
+	default:
+		return q, false
+	}
+}
+
 func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen uint64, q string) {
 	defer s.wg.Done()
 	defer cancel()
 
-	isPlaylist := IsPlaylistTarget(q)
+	target, isYouTube := ParseSearchTarget(q)
+	if target == "" {
+		s.mu.Lock()
+		stale := s.closed || gen != s.gen
+		s.mu.Unlock()
+		if !stale {
+			s.emit(SearchResult{Generation: gen, Query: ""})
+		}
+		return
+	}
+
+	activeCat := s.cat
+	if isYouTube && s.ytCat != nil {
+		activeCat = s.ytCat
+	}
+
+	isPlaylist := IsPlaylistTarget(target)
 	var (
 		tracks []model.Track
 		err    error
 	)
 	if isPlaylist {
-		tracks, err = s.cat.Playlist(ctx, q)
-	} else if vid := model.VideoID(q); vid != "" && !model.IsVideoID(q) {
-		tr, trackErr := s.cat.Track(ctx, vid)
+		tracks, err = activeCat.Playlist(ctx, target)
+	} else if vid := model.VideoID(target); vid != "" && !model.IsVideoID(target) {
+		tr, trackErr := activeCat.Track(ctx, vid)
 		if trackErr == nil {
 			tracks = []model.Track{tr}
 		} else if errors.Is(trackErr, context.Canceled) {
 			return
 		} else {
-			tracks, err = s.cat.Search(ctx, vid, s.limit)
+			tracks, err = activeCat.Search(ctx, vid, s.limit)
 		}
 	} else {
-		tracks, err = s.cat.Search(ctx, q, s.limit)
+		tracks, err = activeCat.Search(ctx, target, s.limit)
 	}
 
 	if errors.Is(err, context.Canceled) {
@@ -244,6 +286,7 @@ func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen
 		Query:      q,
 		Tracks:     tracks,
 		IsPlaylist: isPlaylist,
+		IsYouTube:  isYouTube,
 		Err:        err,
 	})
 }

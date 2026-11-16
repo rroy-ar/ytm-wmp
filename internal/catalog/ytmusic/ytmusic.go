@@ -52,7 +52,10 @@ const (
 	targetThumbDim    = 360
 )
 
-var _ catalog.Catalog = (*Client)(nil)
+var (
+	_ catalog.Catalog       = (*Client)(nil)
+	_ catalog.RadioProvider = (*Client)(nil)
+)
 
 type cachedTracks struct {
 	tracks  []model.Track
@@ -83,6 +86,7 @@ type Client struct {
 	mu          sync.Mutex
 	searchCache map[string]cachedTracks
 	trackCache  map[string]cachedTrack
+	radioCache  map[string]cachedTracks
 }
 
 // Option customizes a Client.
@@ -201,6 +205,7 @@ func New(opts ...Option) *Client {
 		now:           time.Now,
 		searchCache:   make(map[string]cachedTracks),
 		trackCache:    make(map[string]cachedTrack),
+		radioCache:    make(map[string]cachedTracks),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -330,6 +335,76 @@ func (c *Client) Playlist(ctx context.Context, idOrURL string) ([]model.Track, e
 	return tracks, nil
 }
 
+// Related fetches unauthenticated YouTube Music Up Next / radio tracks seeded
+// by trackID via InnerTube `/next` (`RDAMVM<videoId>`), excluding the seed
+// track itself.
+func (c *Client) Related(ctx context.Context, trackID string) ([]model.Track, error) {
+	trackID = strings.TrimSpace(trackID)
+	if trackID == "" {
+		return nil, catalog.ErrEmptyQuery
+	}
+
+	vid := model.VideoID(trackID)
+	if vid == "" {
+		return nil, fmt.Errorf("%w: %q", catalog.ErrNotFound, trackID)
+	}
+
+	if c.searchTTL > 0 {
+		now := c.now()
+		c.mu.Lock()
+		cached, ok := c.radioCache[vid]
+		c.mu.Unlock()
+		if ok && now.Before(cached.expires) {
+			return append([]model.Track(nil), cached.tracks...), nil
+		}
+	}
+
+	var resp nextResponse
+	err := c.postJSON(ctx, "next", innerTubeRequest{
+		VideoID:     vid,
+		PlaylistID:  "RDAMVM" + vid,
+		IsAudioOnly: true,
+	}, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("ytmusic radio %q: %w", trackID, err)
+	}
+
+	tracks := filterRelatedTracks(extractNextTracks(resp), vid)
+	if len(tracks) == 0 {
+		var plainResp nextResponse
+		if plainErr := c.postJSON(ctx, "next", innerTubeRequest{
+			VideoID:     vid,
+			IsAudioOnly: true,
+		}, &plainResp); plainErr == nil {
+			if ep, ok := extractAutomixEndpoint(plainResp); ok && ep.PlaylistID != "" {
+				var mixResp nextResponse
+				if mixErr := c.postJSON(ctx, "next", innerTubeRequest{
+					VideoID:     vid,
+					PlaylistID:  ep.PlaylistID,
+					Params:      ep.Params,
+					IsAudioOnly: true,
+				}, &mixResp); mixErr == nil {
+					tracks = filterRelatedTracks(extractNextTracks(mixResp), vid)
+				}
+			}
+		}
+	}
+
+	if c.playlistLimit > 0 && len(tracks) > c.playlistLimit {
+		tracks = tracks[:c.playlistLimit]
+	}
+	c.cacheTracks(tracks)
+	if c.searchTTL > 0 && len(tracks) > 0 {
+		c.mu.Lock()
+		c.radioCache[vid] = cachedTracks{
+			tracks:  append([]model.Track(nil), tracks...),
+			expires: c.now().Add(c.searchTTL),
+		}
+		c.mu.Unlock()
+	}
+	return append([]model.Track(nil), tracks...), nil
+}
+
 func (c *Client) postJSON(ctx context.Context, endpoint string, reqBody innerTubeRequest, dst any) error {
 	reqBody.Context = innerTubeContext{
 		Client: innerTubeClient{
@@ -442,12 +517,13 @@ func toBrowseID(id string) string {
 // --- InnerTube JSON wire types ---
 
 type innerTubeRequest struct {
-	Context    innerTubeContext `json:"context"`
-	Query      string           `json:"query,omitempty"`
-	Params     string           `json:"params,omitempty"`
-	VideoID    string           `json:"videoId,omitempty"`
-	BrowseID   string           `json:"browseId,omitempty"`
-	PlaylistID string           `json:"playlistId,omitempty"`
+	Context     innerTubeContext `json:"context"`
+	Query       string           `json:"query,omitempty"`
+	Params      string           `json:"params,omitempty"`
+	VideoID     string           `json:"videoId,omitempty"`
+	BrowseID    string           `json:"browseId,omitempty"`
+	PlaylistID  string           `json:"playlistId,omitempty"`
+	IsAudioOnly bool             `json:"isAudioOnly,omitempty"`
 }
 
 type innerTubeContext struct {
@@ -610,6 +686,20 @@ type playlistPanelItem struct {
 			PlaylistPanelVideoRenderer *playlistPanelVideo `json:"playlistPanelVideoRenderer"`
 		} `json:"primaryRenderer"`
 	} `json:"playlistPanelVideoWrapperRenderer"`
+	AutomixPreviewVideoRenderer *struct {
+		Content *struct {
+			AutomixPlaylistVideoRenderer *struct {
+				NavigationEndpoint *struct {
+					WatchPlaylistEndpoint *watchPlaylistEndpoint `json:"watchPlaylistEndpoint"`
+				} `json:"navigationEndpoint"`
+			} `json:"automixPlaylistVideoRenderer"`
+		} `json:"content"`
+	} `json:"automixPreviewVideoRenderer"`
+}
+
+type watchPlaylistEndpoint struct {
+	PlaylistID string `json:"playlistId"`
+	Params     string `json:"params"`
 }
 
 type playlistPanelVideo struct {
@@ -749,7 +839,7 @@ type nextCandidate struct {
 	selected bool
 }
 
-func extractNextTracks(resp nextResponse) []nextCandidate {
+func nextPanels(resp nextResponse) []*playlistPanelRenderer {
 	var panels []*playlistPanelRenderer
 	sc := resp.Contents.SingleColumnMusicWatchNextResultsRenderer
 	if sc == nil {
@@ -769,9 +859,12 @@ func extractNextTracks(resp nextResponse) []nextCandidate {
 	if sc.Playlist != nil && sc.Playlist.PlaylistPanelRenderer != nil {
 		panels = append(panels, sc.Playlist.PlaylistPanelRenderer)
 	}
+	return panels
+}
 
+func extractNextTracks(resp nextResponse) []nextCandidate {
 	var out []nextCandidate
-	for _, panel := range panels {
+	for _, panel := range nextPanels(resp) {
 		for _, item := range panel.Contents {
 			vidRenderer := item.PlaylistPanelVideoRenderer
 			if vidRenderer == nil && item.PlaylistPanelVideoWrapperRenderer != nil && item.PlaylistPanelVideoWrapperRenderer.PrimaryRenderer != nil {
@@ -784,6 +877,49 @@ func extractNextTracks(resp nextResponse) []nextCandidate {
 				out = append(out, nextCandidate{track: tr, selected: vidRenderer.Selected})
 			}
 		}
+	}
+	return out
+}
+
+func extractAutomixEndpoint(resp nextResponse) (watchPlaylistEndpoint, bool) {
+	for _, panel := range nextPanels(resp) {
+		for _, item := range panel.Contents {
+			if item.AutomixPreviewVideoRenderer == nil ||
+				item.AutomixPreviewVideoRenderer.Content == nil ||
+				item.AutomixPreviewVideoRenderer.Content.AutomixPlaylistVideoRenderer == nil ||
+				item.AutomixPreviewVideoRenderer.Content.AutomixPlaylistVideoRenderer.NavigationEndpoint == nil ||
+				item.AutomixPreviewVideoRenderer.Content.AutomixPlaylistVideoRenderer.NavigationEndpoint.WatchPlaylistEndpoint == nil {
+				continue
+			}
+			ep := *item.AutomixPreviewVideoRenderer.Content.AutomixPlaylistVideoRenderer.NavigationEndpoint.WatchPlaylistEndpoint
+			if ep.PlaylistID != "" {
+				return ep, true
+			}
+		}
+	}
+	return watchPlaylistEndpoint{}, false
+}
+
+func filterRelatedTracks(candidates []nextCandidate, seedID string) []model.Track {
+	if len(candidates) == 0 {
+		return nil
+	}
+	out := make([]model.Track, 0, len(candidates))
+	seen := map[string]struct{}{}
+	if seedID != "" {
+		seen[seedID] = struct{}{}
+	}
+	for _, c := range candidates {
+		id := model.NormalizeTrackID(c.track.ID)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		c.track.ID = id
+		out = append(out, c.track)
 	}
 	return out
 }

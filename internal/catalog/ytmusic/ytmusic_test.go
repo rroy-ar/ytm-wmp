@@ -320,6 +320,115 @@ func TestEmptyQueryAndNotFound(t *testing.T) {
 	if _, err := client.Track(context.Background(), "0wRYvsfhsR8"); !errors.Is(err, catalog.ErrNotFound) {
 		t.Fatalf("Track empty response = %v, want ErrNotFound", err)
 	}
+	if _, err := client.Related(context.Background(), " "); !errors.Is(err, catalog.ErrEmptyQuery) {
+		t.Fatalf("Related empty = %v, want ErrEmptyQuery", err)
+	}
+	if _, err := client.Related(context.Background(), "not-a-valid-video-id"); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("Related invalid ID = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRelatedRadioAndAutomixFallback(t *testing.T) {
+	nextFixture := readFixture(t, "track_next.json")
+	automixFixture := []byte(`{
+	  "contents": {
+	    "singleColumnMusicWatchNextResultsRenderer": {
+	      "tabbedRenderer": {
+	        "watchNextTabbedResultsRenderer": {
+	          "tabs": [{
+	            "tabRenderer": {
+	              "content": {
+	                "musicQueueRenderer": {
+	                  "content": {
+	                    "playlistPanelRenderer": {
+	                      "contents": [
+	                        {"playlistPanelVideoRenderer": {"videoId": "FGBhQbmPwH8", "title": {"runs": [{"text": "One More Time"}]}}},
+	                        {"automixPreviewVideoRenderer": {"content": {"automixPlaylistVideoRenderer": {"navigationEndpoint": {"watchPlaylistEndpoint": {"playlistId": "RDAMVMFGBhQbmPwH8", "params": "wAEB"}}}}}}
+	                      ]
+	                    }
+	                  }
+	                }
+	              }
+	            }
+	          }]
+	        }
+	      }
+	    }
+	  }
+	}`)
+	automixTracksFixture := []byte(`{
+	  "contents": {
+	    "singleColumnMusicWatchNextResultsRenderer": {
+	      "playlist": {
+	        "playlistPanelRenderer": {
+	          "contents": [
+	            {"playlistPanelVideoRenderer": {"videoId": "FGBhQbmPwH8", "title": {"runs": [{"text": "One More Time"}]}}},
+	            {"playlistPanelVideoRenderer": {"videoId": "K0HSD_i2DvA", "title": {"runs": [{"text": "Around the World"}]}, "shortBylineText": {"runs": [{"text": "Daft Punk"}]}, "lengthText": {"runs": [{"text": "7:09"}]}}}
+	          ]
+	        }
+	      }
+	    }
+	  }
+	}`)
+
+	srv, reqs, mu := newTestServer(t, func(endpoint string, req innerTubeRequest) (int, []byte) {
+		if endpoint != "/next" {
+			return http.StatusNotFound, nil
+		}
+		switch {
+		case req.VideoID == "0wRYvsfhsR8" && req.PlaylistID == "RDAMVM0wRYvsfhsR8":
+			return http.StatusOK, nextFixture
+		case req.VideoID == "FGBhQbmPwH8" && req.PlaylistID == "RDAMVMFGBhQbmPwH8" && req.Params == "":
+			return http.StatusOK, []byte(`{"contents":{}}`)
+		case req.VideoID == "FGBhQbmPwH8" && req.PlaylistID == "":
+			return http.StatusOK, automixFixture
+		case req.VideoID == "FGBhQbmPwH8" && req.PlaylistID == "RDAMVMFGBhQbmPwH8" && req.Params == "wAEB":
+			return http.StatusOK, automixTracksFixture
+		default:
+			return http.StatusOK, []byte(`{"contents":{}}`)
+		}
+	})
+
+	now := time.Unix(1000, 0)
+	client := New(WithBaseURL(srv.URL), WithClock(func() time.Time { return now }))
+
+	tracks, err := client.Related(context.Background(), "https://music.youtube.com/watch?v=0wRYvsfhsR8")
+	if err != nil {
+		t.Fatalf("Related = %v", err)
+	}
+	if len(tracks) != 1 || tracks[0].ID != "FGBhQbmPwH8" || tracks[0].Title != "One More Time" {
+		t.Fatalf("Related(0wRYvsfhsR8) = %+v, want single non-seed track FGBhQbmPwH8", tracks)
+	}
+	mu.Lock()
+	firstReq := (*reqs)[0]
+	mu.Unlock()
+	if firstReq.path != "/next" || firstReq.body.PlaylistID != "RDAMVM0wRYvsfhsR8" || !firstReq.body.IsAudioOnly {
+		t.Fatalf("first request = %+v", firstReq)
+	}
+
+	// Second call within TTL should hit radioCache without a new HTTP request.
+	cached, err := client.Related(context.Background(), "0wRYvsfhsR8")
+	if err != nil {
+		t.Fatalf("cached Related = %v", err)
+	}
+	if len(cached) != 1 || cached[0].ID != "FGBhQbmPwH8" {
+		t.Fatalf("cached Related = %+v", cached)
+	}
+	mu.Lock()
+	callsAfterCache := len(*reqs)
+	mu.Unlock()
+	if callsAfterCache != 1 {
+		t.Fatalf("HTTP calls = %d, want 1 (cached)", callsAfterCache)
+	}
+
+	// Fallback to automixPreviewVideoRenderer when RDAMVM returns empty.
+	fallback, err := client.Related(context.Background(), "FGBhQbmPwH8")
+	if err != nil {
+		t.Fatalf("Related fallback = %v", err)
+	}
+	if len(fallback) != 1 || fallback[0].ID != "K0HSD_i2DvA" || fallback[0].Title != "Around the World" {
+		t.Fatalf("fallback = %+v", fallback)
+	}
 }
 
 func TestMaxResponseBytesEnforced(t *testing.T) {
@@ -380,5 +489,18 @@ func TestLiveCatalogSearchAndTrack(t *testing.T) {
 	}
 	if albumTracks[0].ID == "" || albumTracks[0].Title == "" || albumTracks[0].Artist == "" || albumTracks[0].ThumbnailURL == "" {
 		t.Fatalf("live Playlist returned incomplete track: %+v", albumTracks[0])
+	}
+
+	radioTracks, err := fresh.Related(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("live Related(%s) = %v", first.ID, err)
+	}
+	if len(radioTracks) == 0 {
+		t.Fatal("live Related returned 0 tracks")
+	}
+	for _, rt := range radioTracks {
+		if rt.ID == first.ID {
+			t.Fatalf("live Related included seed track %q", first.ID)
+		}
 	}
 }

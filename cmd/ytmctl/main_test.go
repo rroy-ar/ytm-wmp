@@ -207,3 +207,38 @@ func TestExecuteCatalogFlagSelection(t *testing.T) {
 		t.Fatal("invalid subcommand -catalog succeeded, want error")
 	}
 }
+
+type fakeRadioCatalog struct {
+	fakeCatalog
+	radioTracks []model.Track
+}
+
+func (f *fakeRadioCatalog) Related(context.Context, string) ([]model.Track, error) {
+	return f.radioTracks, nil
+}
+
+func TestExecuteRadio(t *testing.T) {
+	radioCat := &fakeRadioCatalog{
+		radioTracks: []model.Track{
+			{ID: "r1", Title: "Radio 1"},
+			{ID: "r2", Title: "Radio 2"},
+		},
+	}
+
+	var out, errOut bytes.Buffer
+	if err := execute(context.Background(), []string{"radio", "-limit", "1", "-json", "0wRYvsfhsR8"}, &out, &errOut, radioCat, nil); err != nil {
+		t.Fatalf("radio = %v", err)
+	}
+	var decoded []model.Track
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("radio json: %v", err)
+	}
+	if len(decoded) != 1 || decoded[0].ID != "r1" {
+		t.Fatalf("decoded = %+v, want [r1]", decoded)
+	}
+
+	// Catalog without RadioProvider returns a clear error.
+	if err := execute(context.Background(), []string{"radio", "0wRYvsfhsR8"}, &out, &errOut, &fakeCatalog{}, nil); err == nil {
+		t.Fatal("radio without RadioProvider succeeded, want error")
+	}
+}

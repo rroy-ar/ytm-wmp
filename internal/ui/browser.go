@@ -107,7 +107,11 @@ func (g *Game) initBrowser() {
 		if g.hasSearchDebounce {
 			debounce = g.searchDebounce
 		}
-		g.searcher = catalog.NewSearcher(g.cat, catalog.WithDebounce(debounce))
+		searchOpts := []catalog.SearcherOption{catalog.WithDebounce(debounce)}
+		if g.ytCat != nil {
+			searchOpts = append(searchOpts, catalog.WithYouTubeCatalog(g.ytCat))
+		}
+		g.searcher = catalog.NewSearcher(g.cat, searchOpts...)
 		if strings.TrimSpace(g.searchQuery) != "" {
 			g.searchStatus = "Searching..."
 			g.searcher.Submit(g.searchQuery)
@@ -135,9 +139,9 @@ func (g *Game) updateBrowser() {
 	g.drainArtwork()
 
 	_, wheelY := ebiten.Wheel()
-	if wheelY != 0 && len(g.results) > VisibleResultRows {
+	if wheelY != 0 && g.browserMode && !g.hidePL && len(g.results) > VisibleResultRows {
 		cx, cy := ebiten.CursorPosition()
-		if image.Pt(cx, cy).In(ResultListBounds) {
+		if image.Pt(cx, cy).In(offsetRect(ResultListBounds, g.browserDeltaY())) {
 			if wheelY > 0 {
 				g.scrollResults(-1)
 			} else {
@@ -169,9 +173,12 @@ func (g *Game) drainSearchResults() {
 			g.results = append([]model.Track(nil), res.Tracks...)
 			g.selectedResult = 0
 			g.scrollOffset = 0
-			if res.IsPlaylist {
+			switch {
+			case res.IsPlaylist:
 				g.searchStatus = fmt.Sprintf("Playlist: %d tracks", len(res.Tracks))
-			} else {
+			case res.IsYouTube:
+				g.searchStatus = fmt.Sprintf("YT: %d results", len(res.Tracks))
+			default:
 				g.searchStatus = fmt.Sprintf("%d results", len(res.Tracks))
 			}
 			g.requestVisibleArtwork()
@@ -421,8 +428,13 @@ func (g *Game) requestArtwork(tr model.Track) {
 }
 
 func (g *Game) focusSearch() {
+	g.hidePL = false
+	g.browserMode = true
+	g.plMenu = plMenuNone
+	g.focusedPanel = panelPlaylist
 	g.searchFocused = true
 	g.showArtModal = false
+	g.syncWindowSize()
 }
 
 func (g *Game) blurSearch() {
@@ -592,6 +604,10 @@ func (g *Game) onBrowserClick(id string) bool {
 	case WidgetEject, WidgetSearchInput:
 		g.focusSearch()
 		return true
+	case WidgetBrowserModePL:
+		g.browserMode = false
+		g.searchFocused = false
+		return true
 	case WidgetSearchSubmit:
 		g.submitSearch()
 		return true
@@ -623,6 +639,11 @@ func (g *Game) onBrowserClick(id string) bool {
 			g.searchStatus = fmt.Sprintf("Playing %d tracks", len(g.results))
 		}
 		return true
+	case WidgetBrowserAutoplay:
+		if g.ctrl != nil {
+			g.ctrl.Send(playback.SetAutoplay{Enabled: !g.snap.Autoplay})
+		}
+		return true
 	}
 
 	for rowIdx, rowWidget := range resultRowWidgets {
@@ -647,8 +668,8 @@ func (g *Game) playResultIndex(idx int) {
 	}
 	g.errText = ""
 	g.ctrl.Send(playback.SetQueue{
-		Tracks:   g.results,
-		Index:    idx,
+		Tracks:   []model.Track{g.results[idx]},
+		Index:    0,
 		AutoPlay: true,
 	})
 }
@@ -688,19 +709,23 @@ func (g *Game) scrollResults(delta int) {
 }
 
 func (g *Game) drawBrowser(screen *ebiten.Image) {
-	vector.DrawFilledRect(screen, 0, MainWindowHeight, WindowWidth, BrowserHeight, colPanelBg, false)
-	vector.DrawFilledRect(screen, 0, MainWindowHeight, WindowWidth, 12, colHeaderBg, false)
-	vector.StrokeRect(screen, 0.5, MainWindowHeight+0.5, WindowWidth-1, BrowserHeight-1, 1, colBorder, false)
+	dy := g.browserDeltaY()
+	topY := MainWindowHeight + dy
+	vector.DrawFilledRect(screen, 0, float32(topY), WindowWidth, BrowserHeight, colPanelBg, false)
+	vector.DrawFilledRect(screen, 0, float32(topY), WindowWidth, 12, colHeaderBg, false)
+	vector.StrokeRect(screen, 0.5, float32(topY)+0.5, WindowWidth-1, BrowserHeight-1, 1, colBorder, false)
 
-	ebitenutil.DebugPrintAt(screen, "CATALOG", 6, MainWindowHeight)
-	ebitenutil.DebugPrintAt(screen, truncateRunes(g.searchStatus, 28), 72, MainWindowHeight)
+	ebitenutil.DebugPrintAt(screen, "CATALOG", 6, topY)
+	ebitenutil.DebugPrintAt(screen, truncateRunes(g.searchStatus, 24), 60, topY)
+	g.drawButtonRect(screen, offsetRect(BrowserModePLBounds, dy), WidgetBrowserModePL, "PL")
 
 	snap := g.snap
 
 	// Now-Playing strip.
-	vector.DrawFilledRect(screen, 4, 129, 267, 29, colSurfaceBg, false)
-	g.drawScaledImage(screen, g.artworkListImage(snap.Track), NowPlayingArtBounds)
-	vector.StrokeRect(screen, float32(NowPlayingArtBounds.Min.X)-0.5, float32(NowPlayingArtBounds.Min.Y)-0.5, float32(NowPlayingArtBounds.Dx()+1), float32(NowPlayingArtBounds.Dy()+1), 1, colBorder, false)
+	artRect := offsetRect(NowPlayingArtBounds, dy)
+	vector.DrawFilledRect(screen, 4, float32(129+dy), 267, 29, colSurfaceBg, false)
+	g.drawScaledImage(screen, g.artworkListImage(snap.Track), artRect)
+	vector.StrokeRect(screen, float32(artRect.Min.X)-0.5, float32(artRect.Min.Y)-0.5, float32(artRect.Dx()+1), float32(artRect.Dy()+1), 1, colBorder, false)
 
 	title := trackDisplayTitle(snap.Track)
 	if title == "" {
@@ -711,16 +736,17 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 		artist = snap.State.String()
 	}
 	infoLine := fmt.Sprintf("%s [%s/%s]", truncateRunes(artist, 22), formatClock(snap.Position), formatClock(snap.Duration))
-	ebitenutil.DebugPrintAt(screen, truncateRunes(title, 38), 36, 129)
-	ebitenutil.DebugPrintAt(screen, truncateRunes(infoLine, 38), 36, 142)
+	ebitenutil.DebugPrintAt(screen, truncateRunes(title, 38), 36, 129+dy)
+	ebitenutil.DebugPrintAt(screen, truncateRunes(infoLine, 38), 36, 142+dy)
 
 	// Search input + action buttons.
+	inputRect := offsetRect(SearchInputBounds, dy)
 	inputBorder := colBorder
 	if g.searchFocused {
 		inputBorder = colFocusBorder
 	}
-	vector.DrawFilledRect(screen, float32(SearchInputBounds.Min.X), float32(SearchInputBounds.Min.Y), float32(SearchInputBounds.Dx()), float32(SearchInputBounds.Dy()), colSurfaceBg, false)
-	vector.StrokeRect(screen, float32(SearchInputBounds.Min.X)+0.5, float32(SearchInputBounds.Min.Y)+0.5, float32(SearchInputBounds.Dx()-1), float32(SearchInputBounds.Dy()-1), 1, inputBorder, false)
+	vector.DrawFilledRect(screen, float32(inputRect.Min.X), float32(inputRect.Min.Y), float32(inputRect.Dx()), float32(inputRect.Dy()), colSurfaceBg, false)
+	vector.StrokeRect(screen, float32(inputRect.Min.X)+0.5, float32(inputRect.Min.Y)+0.5, float32(inputRect.Dx()-1), float32(inputRect.Dy()-1), 1, inputBorder, false)
 
 	inputLabel := "Search or playlist URL (/)"
 	if g.searchQuery != "" || g.searchFocused {
@@ -729,18 +755,19 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 			inputLabel += "_"
 		}
 	}
-	ebitenutil.DebugPrintAt(screen, inputLabel, SearchInputBounds.Min.X+3, SearchInputBounds.Min.Y+1)
+	ebitenutil.DebugPrintAt(screen, inputLabel, inputRect.Min.X+3, inputRect.Min.Y+1)
 
-	g.drawButtonRect(screen, SearchSubmitBounds, WidgetSearchSubmit, "GO")
-	g.drawButtonRect(screen, SearchClearBounds, WidgetSearchClear, "CLR")
+	g.drawButtonRect(screen, offsetRect(SearchSubmitBounds, dy), WidgetSearchSubmit, "GO")
+	g.drawButtonRect(screen, offsetRect(SearchClearBounds, dy), WidgetSearchClear, "CLR")
 
 	// Results list.
-	vector.DrawFilledRect(screen, float32(ResultListBounds.Min.X), float32(ResultListBounds.Min.Y), float32(ResultListBounds.Dx()), float32(ResultListBounds.Dy()), colSurfaceBg, false)
-	vector.StrokeRect(screen, float32(ResultListBounds.Min.X)+0.5, float32(ResultListBounds.Min.Y)+0.5, float32(ResultListBounds.Dx()-1), float32(ResultListBounds.Dy()-1), 1, colBorder, false)
+	listRect := offsetRect(ResultListBounds, dy)
+	vector.DrawFilledRect(screen, float32(listRect.Min.X), float32(listRect.Min.Y), float32(listRect.Dx()), float32(listRect.Dy()), colSurfaceBg, false)
+	vector.StrokeRect(screen, float32(listRect.Min.X)+0.5, float32(listRect.Min.Y)+0.5, float32(listRect.Dx()-1), float32(listRect.Dy()-1), 1, colBorder, false)
 
 	if len(g.results) == 0 {
-		ebitenutil.DebugPrintAt(screen, "Press / or click search box", 16, 200)
-		ebitenutil.DebugPrintAt(screen, "to search YTM or paste URL", 16, 216)
+		ebitenutil.DebugPrintAt(screen, "Press / or click search box", 16, 200+dy)
+		ebitenutil.DebugPrintAt(screen, "to search YTM (yt: for YouTube)", 16, 216+dy)
 	} else {
 		for row := 0; row < VisibleResultRows; row++ {
 			idx := g.scrollOffset + row
@@ -748,7 +775,7 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 				break
 			}
 			tr := g.results[idx]
-			rowY := ResultListBounds.Min.Y + row*ResultRowHeight
+			rowY := listRect.Min.Y + row*ResultRowHeight
 
 			rowBg := colSurfaceBg
 			if idx == g.selectedResult {
@@ -756,7 +783,7 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 			} else if row%2 == 1 {
 				rowBg = colRowAltBg
 			}
-			vector.DrawFilledRect(screen, float32(ResultListBounds.Min.X+1), float32(rowY), float32(ResultListBounds.Dx()-2), ResultRowHeight, rowBg, false)
+			vector.DrawFilledRect(screen, float32(listRect.Min.X+1), float32(rowY), float32(listRect.Dx()-2), ResultRowHeight, rowBg, false)
 
 			thumbRect := image.Rect(9, rowY+2, 29, rowY+22)
 			g.drawScaledImage(screen, g.artworkListImage(tr), thumbRect)
@@ -768,35 +795,50 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 	}
 
 	// Bottom bar.
-	g.drawButtonRect(screen, BrowserPlayBounds, WidgetBrowserPlay, "PLAY")
-	g.drawButtonRect(screen, BrowserQueueBounds, WidgetBrowserQueue, "QUEUE")
-	g.drawButtonRect(screen, BrowserImportAllBounds, WidgetBrowserImportAll, "ALL->Q")
+	g.drawButtonRect(screen, offsetRect(BrowserPlayBounds, dy), WidgetBrowserPlay, "PLAY")
+	g.drawButtonRect(screen, offsetRect(BrowserQueueBounds, dy), WidgetBrowserQueue, "QUEUE")
+	g.drawButtonRect(screen, offsetRect(BrowserImportAllBounds, dy), WidgetBrowserImportAll, "ALL->Q")
+	autoLabel := "AUTO:OF"
+	if snap.Autoplay {
+		autoLabel = "AUTO:ON"
+	}
+	g.drawToggleButtonRect(screen, offsetRect(BrowserAutoplayBounds, dy), WidgetBrowserAutoplay, autoLabel, snap.Autoplay)
 
 	queueSummary := fmt.Sprintf("Q:%d/%d", snap.Index+1, len(snap.Queue))
 	if len(snap.Queue) == 0 {
 		queueSummary = "Q:0/0"
 	}
-	ebitenutil.DebugPrintAt(screen, queueSummary, 192, 327)
+	ebitenutil.DebugPrintAt(screen, queueSummary, 190, 327+dy)
 
 	if g.showArtModal {
-		g.drawBrowserArtworkModal(screen, snap)
+		g.drawBrowserArtworkModal(screen, snap, dy)
 	}
 }
 
-func (g *Game) drawBrowserArtworkModal(screen *ebiten.Image, snap playback.Snapshot) {
-	vector.DrawFilledRect(screen, 0, MainWindowHeight, WindowWidth, BrowserHeight, colModalBg, false)
-	g.drawScaledImage(screen, g.artworkNowPlayingImage(snap.Track), ArtModalBounds)
-	vector.StrokeRect(screen, float32(ArtModalBounds.Min.X)-0.5, float32(ArtModalBounds.Min.Y)-0.5, float32(ArtModalBounds.Dx()+1), float32(ArtModalBounds.Dy()+1), 1, colFocusBorder, false)
-	ebitenutil.DebugPrintAt(screen, truncateRunes(trackDisplayTitle(snap.Track), 38), 16, 328)
+func (g *Game) drawBrowserArtworkModal(screen *ebiten.Image, snap playback.Snapshot, dy int) {
+	vector.DrawFilledRect(screen, 0, float32(MainWindowHeight+dy), WindowWidth, BrowserHeight, colModalBg, false)
+	modalRect := offsetRect(ArtModalBounds, dy)
+	g.drawScaledImage(screen, g.artworkNowPlayingImage(snap.Track), modalRect)
+	vector.StrokeRect(screen, float32(modalRect.Min.X)-0.5, float32(modalRect.Min.Y)-0.5, float32(modalRect.Dx()+1), float32(modalRect.Dy()+1), 1, colFocusBorder, false)
+	ebitenutil.DebugPrintAt(screen, truncateRunes(trackDisplayTitle(snap.Track), 38), 16, 328+dy)
 }
 
 func (g *Game) drawButtonRect(screen *ebiten.Image, rect image.Rectangle, widgetID, label string) {
+	g.drawToggleButtonRect(screen, rect, widgetID, label, false)
+}
+
+func (g *Game) drawToggleButtonRect(screen *ebiten.Image, rect image.Rectangle, widgetID, label string, active bool) {
 	bg := colButtonBg
+	border := colBorder
+	if active {
+		bg = colButtonActive
+		border = colFocusBorder
+	}
 	if g.pointer.Active() == widgetID && g.pointer.Pressed() {
 		bg = colButtonActive
 	}
 	vector.DrawFilledRect(screen, float32(rect.Min.X), float32(rect.Min.Y), float32(rect.Dx()), float32(rect.Dy()), bg, false)
-	vector.StrokeRect(screen, float32(rect.Min.X)+0.5, float32(rect.Min.Y)+0.5, float32(rect.Dx()-1), float32(rect.Dy()-1), 1, colBorder, false)
+	vector.StrokeRect(screen, float32(rect.Min.X)+0.5, float32(rect.Min.Y)+0.5, float32(rect.Dx()-1), float32(rect.Dy()-1), 1, border, false)
 	ebitenutil.DebugPrintAt(screen, label, rect.Min.X+4, rect.Min.Y+1)
 }
 

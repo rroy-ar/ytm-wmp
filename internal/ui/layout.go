@@ -11,13 +11,17 @@ import (
 const (
 	MainWindowWidth  = 275
 	MainWindowHeight = 116
+	EQWindowHeight   = 116
 	BrowserHeight    = 232
+	PlaylistHeight   = 232
 
 	WindowWidth  = MainWindowWidth
 	WindowHeight = MainWindowHeight + BrowserHeight
 
-	VisibleResultRows = 6
-	ResultRowHeight   = 24
+	VisibleResultRows   = 6
+	ResultRowHeight     = 24
+	VisiblePlaylistRows = 13
+	PlaylistRowHeight   = 13
 )
 
 // Widget IDs used by the game loop.
@@ -29,7 +33,46 @@ const (
 	WidgetNext     = "next"
 	WidgetEject    = "eject"
 
+	WidgetMainClose    = "main.close"
+	WidgetMainTime     = "main.time"
+	WidgetMainVolume   = "main.volume"
+	WidgetMainBalance  = "main.balance"
+	WidgetMainEQ       = "main.eq"
+	WidgetMainPL       = "main.pl"
+	WidgetMainPosition = "main.position"
+	WidgetMainShuffle  = "main.shuffle"
+	WidgetMainRepeat   = "main.repeat"
+
+	WidgetEQClose   = "eq.close"
+	WidgetEQOn      = "eq.on"
+	WidgetEQAuto    = "eq.auto"
+	WidgetEQPresets = "eq.presets"
+	WidgetEQPlus12  = "eq.plus12"
+	WidgetEQZero    = "eq.zero"
+	WidgetEQMinus12 = "eq.minus12"
+	WidgetEQPreamp  = "eq.preamp"
+
+	WidgetPlaylistClose      = "playlist.close"
+	WidgetPlaylistModeSearch = "playlist.mode_search"
+	WidgetPlaylistScrollbar  = "playlist.scrollbar"
+	WidgetPlaylistAdd        = "playlist.add"
+	WidgetPlaylistRem        = "playlist.rem"
+	WidgetPlaylistSel        = "playlist.sel"
+	WidgetPlaylistMisc       = "playlist.misc"
+	WidgetPlaylistList       = "playlist.list"
+	WidgetPlaylistMiniPrev   = "playlist.mini.prev"
+	WidgetPlaylistMiniPlay   = "playlist.mini.play"
+	WidgetPlaylistMiniPause  = "playlist.mini.pause"
+	WidgetPlaylistMiniStop   = "playlist.mini.stop"
+	WidgetPlaylistMiniNext   = "playlist.mini.next"
+	WidgetPlaylistMiniEject  = "playlist.mini.eject"
+
+	WidgetPLMenuItem0 = "playlist.menu.0"
+	WidgetPLMenuItem1 = "playlist.menu.1"
+	WidgetPLMenuItem2 = "playlist.menu.2"
+
 	WidgetNowPlayingArt    = "browser.nowplaying.art"
+	WidgetBrowserModePL    = "browser.mode_playlist"
 	WidgetSearchInput      = "browser.search.input"
 	WidgetSearchSubmit     = "browser.search.submit"
 	WidgetSearchClear      = "browser.search.clear"
@@ -42,20 +85,46 @@ const (
 	WidgetBrowserPlay      = "browser.play"
 	WidgetBrowserQueue     = "browser.queue"
 	WidgetBrowserImportAll = "browser.import_all"
+	WidgetBrowserAutoplay  = "browser.autoplay"
 )
+
+var eqBandWidgetIDs = [10]string{
+	"eq.band.0", "eq.band.1", "eq.band.2", "eq.band.3", "eq.band.4",
+	"eq.band.5", "eq.band.6", "eq.band.7", "eq.band.8", "eq.band.9",
+}
+
+var playlistRowWidgetIDs = [VisiblePlaylistRows]string{
+	"playlist.row.0", "playlist.row.1", "playlist.row.2", "playlist.row.3",
+	"playlist.row.4", "playlist.row.5", "playlist.row.6", "playlist.row.7",
+	"playlist.row.8", "playlist.row.9", "playlist.row.10", "playlist.row.11",
+	"playlist.row.12",
+}
 
 // Named bounds in 1x logical coordinates shared between hit testing, input
 // focus checks, and rendering.
 var (
-	EjectButtonBounds      = image.Rect(136, 89, 158, 105)
+	EjectButtonBounds  = image.Rect(136, 89, 158, 105)
+	MainCloseBounds    = image.Rect(264, 3, 273, 12)
+	MainTimeBounds     = image.Rect(39, 26, 98, 39)
+	MainMarqueeBounds  = image.Rect(111, 24, 265, 36)
+	MainVolumeBounds   = image.Rect(107, 57, 175, 70)
+	MainBalanceBounds  = image.Rect(177, 57, 215, 70)
+	MainEQToggleBounds = image.Rect(219, 58, 242, 70)
+	MainPLToggleBounds = image.Rect(242, 58, 265, 70)
+	MainPositionBounds = image.Rect(16, 72, 264, 82)
+	MainShuffleBounds  = image.Rect(164, 89, 210, 104)
+	MainRepeatBounds   = image.Rect(210, 89, 238, 104)
+
 	NowPlayingArtBounds    = image.Rect(6, 130, 32, 156)
+	BrowserModePLBounds    = image.Rect(228, 117, 272, 128)
 	SearchInputBounds      = image.Rect(6, 160, 198, 178)
 	SearchSubmitBounds     = image.Rect(200, 160, 234, 178)
 	SearchClearBounds      = image.Rect(236, 160, 269, 178)
 	ResultListBounds       = image.Rect(6, 180, 269, 324)
-	BrowserPlayBounds      = image.Rect(6, 326, 54, 344)
-	BrowserQueueBounds     = image.Rect(57, 326, 112, 344)
-	BrowserImportAllBounds = image.Rect(115, 326, 185, 344)
+	BrowserPlayBounds      = image.Rect(6, 326, 40, 344)
+	BrowserQueueBounds     = image.Rect(43, 326, 83, 344)
+	BrowserImportAllBounds = image.Rect(86, 326, 132, 344)
+	BrowserAutoplayBounds  = image.Rect(135, 326, 185, 344)
 	ArtModalBounds         = image.Rect(38, 124, 238, 324)
 )
 
@@ -87,6 +156,18 @@ var mainWidgets = []Widget{
 	{ID: WidgetEject, Bounds: EjectButtonBounds},
 }
 
+var mainControlWidgets = []Widget{
+	{ID: WidgetMainClose, Bounds: MainCloseBounds},
+	{ID: WidgetMainTime, Bounds: MainTimeBounds},
+	{ID: WidgetMainVolume, Bounds: MainVolumeBounds},
+	{ID: WidgetMainBalance, Bounds: MainBalanceBounds},
+	{ID: WidgetMainEQ, Bounds: MainEQToggleBounds},
+	{ID: WidgetMainPL, Bounds: MainPLToggleBounds},
+	{ID: WidgetMainPosition, Bounds: MainPositionBounds},
+	{ID: WidgetMainShuffle, Bounds: MainShuffleBounds},
+	{ID: WidgetMainRepeat, Bounds: MainRepeatBounds},
+}
+
 var resultRowWidgets = []string{
 	WidgetResultRow0,
 	WidgetResultRow1,
@@ -115,6 +196,24 @@ var browserWidgets = []Widget{
 	{ID: WidgetBrowserPlay, Bounds: BrowserPlayBounds},
 	{ID: WidgetBrowserQueue, Bounds: BrowserQueueBounds},
 	{ID: WidgetBrowserImportAll, Bounds: BrowserImportAllBounds},
+	{ID: WidgetBrowserAutoplay, Bounds: BrowserAutoplayBounds},
 }
 
 var allWidgets = append(append([]Widget(nil), mainWidgets...), browserWidgets...)
+
+func offsetRect(r image.Rectangle, dy int) image.Rectangle {
+	if dy == 0 {
+		return r
+	}
+	return r.Add(image.Pt(0, dy))
+}
+
+func browserWidgetsAt(plTop int) []Widget {
+	dy := plTop - MainWindowHeight
+	out := make([]Widget, 0, len(browserWidgets)+1)
+	for _, w := range browserWidgets {
+		out = append(out, Widget{ID: w.ID, Bounds: offsetRect(w.Bounds, dy)})
+	}
+	out = append(out, Widget{ID: WidgetBrowserModePL, Bounds: offsetRect(BrowserModePLBounds, dy)})
+	return out
+}

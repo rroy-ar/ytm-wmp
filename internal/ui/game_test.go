@@ -53,6 +53,28 @@ func TestTransportButtonsSendPlaybackCommands(t *testing.T) {
 	}
 }
 
+func TestBrowserAutoplayButtonTogglesAutoplay(t *testing.T) {
+	ctrl := newFakeController()
+	g := NewGame(context.Background(), nil, ctrl, &fakeAudioLifecycle{})
+	defer g.Close()
+
+	g.snap = playback.Snapshot{Autoplay: false}
+	g.onClick(WidgetBrowserAutoplay)
+
+	g.snap = playback.Snapshot{Autoplay: true}
+	g.onClick(WidgetBrowserAutoplay)
+
+	cmds := ctrl.sentCommands()
+	if len(cmds) != 2 {
+		t.Fatalf("commands = %T (%d), want 2", cmds, len(cmds))
+	}
+	first, ok1 := cmds[0].(playback.SetAutoplay)
+	second, ok2 := cmds[1].(playback.SetAutoplay)
+	if !ok1 || !first.Enabled || !ok2 || second.Enabled {
+		t.Fatalf("cmds = %#v, want [SetAutoplay{true}, SetAutoplay{false}]", cmds)
+	}
+}
+
 func TestPlaybackErrorEventBecomesVisibleTextAndClearsOnPlay(t *testing.T) {
 	ctrl := newFakeController()
 	g := NewGame(context.Background(), nil, ctrl, &fakeAudioLifecycle{})
@@ -240,16 +262,16 @@ func TestBrowserResultSelectionPlayQueueAndImportAll(t *testing.T) {
 	}
 
 	sq0, ok := cmds[0].(playback.SetQueue)
-	if !ok || sq0.Index != 1 || !sq0.AutoPlay || len(sq0.Tracks) != 3 {
-		t.Fatalf("cmd[0] = %#v, want SetQueue index 1 AutoPlay", cmds[0])
+	if !ok || sq0.Index != 0 || !sq0.AutoPlay || len(sq0.Tracks) != 1 || sq0.Tracks[0].ID != "id-1" {
+		t.Fatalf("cmd[0] = %#v, want SetQueue single track id-1 AutoPlay", cmds[0])
 	}
 	enq, ok := cmds[1].(playback.Enqueue)
 	if !ok || len(enq.Tracks) != 1 || enq.Tracks[0].ID != "id-1" {
 		t.Fatalf("cmd[1] = %#v, want Enqueue id-1", cmds[1])
 	}
 	sq2, ok := cmds[2].(playback.SetQueue)
-	if !ok || sq2.Index != 1 || !sq2.AutoPlay {
-		t.Fatalf("cmd[2] = %#v, want SetQueue index 1 AutoPlay", cmds[2])
+	if !ok || sq2.Index != 0 || !sq2.AutoPlay || len(sq2.Tracks) != 1 || sq2.Tracks[0].ID != "id-1" {
+		t.Fatalf("cmd[2] = %#v, want SetQueue single track id-1 AutoPlay", cmds[2])
 	}
 	sq3, ok := cmds[3].(playback.SetQueue)
 	if !ok || sq3.Index != 0 || !sq3.AutoPlay || len(sq3.Tracks) != 3 {
@@ -298,6 +320,36 @@ func TestBrowserPlaylistURLImport(t *testing.T) {
 	sq, ok := cmds[0].(playback.SetQueue)
 	if !ok || len(sq.Tracks) != 2 || sq.Index != 0 || !sq.AutoPlay {
 		t.Fatalf("playlist import cmd = %#v, want SetQueue(2 tracks, index 0, AutoPlay=true)", cmds[0])
+	}
+}
+
+func TestBrowserYouTubePrefixUsesFallbackCatalog(t *testing.T) {
+	ctrl := newFakeController()
+	ytmCat := newFakeCatalog()
+	ytmCat.searchTracks = []model.Track{{ID: "ytm-1", Title: "YTM Song"}}
+	ytCat := newFakeCatalog()
+	ytCat.searchTracks = []model.Track{{ID: "yt-1", Title: "YT Only Song"}}
+
+	g := NewGame(
+		context.Background(),
+		nil,
+		ctrl,
+		&fakeAudioLifecycle{},
+		WithCatalog(ytmCat),
+		WithYouTubeCatalog(ytCat),
+		WithSearchDebounce(0),
+	)
+	defer g.Close()
+
+	g.focusSearch()
+	g.typeSearchText("yt: obscure cover")
+	g.submitSearch()
+
+	waitGameCondition(t, g, func() bool {
+		return len(g.results) == 1 && g.results[0].ID == "yt-1"
+	})
+	if g.searchStatus != "YT: 1 results" {
+		t.Fatalf("searchStatus = %q, want %q", g.searchStatus, "YT: 1 results")
 	}
 }
 

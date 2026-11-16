@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"golang.org/x/image/bmp"
 )
@@ -287,7 +288,20 @@ func TestDefinitionsAreInsideTheirSheets(t *testing.T) {
 	sheetSizes := map[string]image.Point{
 		"main.bmp":     image.Pt(275, 116),
 		"cbuttons.bmp": image.Pt(136, 36),
-		"titlebar.bmp": image.Pt(312, 87),
+		"titlebar.bmp": image.Pt(344, 87),
+		"shufrep.bmp":  image.Pt(92, 85),
+		"posbar.bmp":   image.Pt(307, 10),
+		"volume.bmp":   image.Pt(68, 433),
+		"balance.bmp":  image.Pt(68, 433),
+		"playpaus.bmp": image.Pt(48, 9),
+		"monoster.bmp": image.Pt(56, 24),
+		"numbers.bmp":  image.Pt(90, 13),
+		"nums_ex.bmp":  image.Pt(108, 13),
+		"text.bmp":     image.Pt(155, 18),
+		"pledit.bmp":   image.Pt(280, 186),
+		"eqmain.bmp":   image.Pt(275, 315),
+		"eq_ex.bmp":    image.Pt(275, 56),
+		"gen.bmp":      image.Pt(178, 86),
 	}
 	for name, def := range Definitions() {
 		size, ok := sheetSizes[def.Sheet]
@@ -297,6 +311,117 @@ func TestDefinitionsAreInsideTheirSheets(t *testing.T) {
 		if !def.Src.In(image.Rectangle{Max: size}) {
 			t.Fatalf("sprite %q rect %v does not fit in %s %v", name, def.Src, def.Sheet, size)
 		}
+	}
+}
+
+func TestOpenBytesAndOpenFSAndColorConfigs(t *testing.T) {
+	pledit := "[Text]\r\nNormal=#112233\r\nCurrent=AABBCCDD\r\nNormalBG=\"#010203\"\r\nSelectedBG=#445566\r\nFont=Tahoma\r\n"
+	viscolor := "// header comment\n1, 2, 3\n10 20 30\n300, -5, 128 // clamped\n"
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, data := range map[string][]byte{
+		"MAIN.BMP":     bmpBytes(t, 275, 116),
+		"pledit.txt":   []byte(pledit),
+		"VISCOLOR.TXT": []byte(viscolor),
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip create %q: %v", name, err)
+		}
+		if _, err := w.Write(data); err != nil {
+			t.Fatalf("zip write %q: %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	s, err := OpenBytes(buf.Bytes())
+	if err != nil {
+		t.Fatalf("OpenBytes = %v", err)
+	}
+	ps := s.PlaylistStyle()
+	if ps.Normal != (color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff}) {
+		t.Fatalf("PlaylistStyle.Normal = %+v", ps.Normal)
+	}
+	if ps.Current != (color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff}) {
+		t.Fatalf("PlaylistStyle.Current = %+v", ps.Current)
+	}
+	if ps.NormalBG != (color.RGBA{R: 0x01, G: 0x02, B: 0x03, A: 0xff}) {
+		t.Fatalf("PlaylistStyle.NormalBG = %+v", ps.NormalBG)
+	}
+	if ps.SelectedBG != (color.RGBA{R: 0x44, G: 0x55, B: 0x66, A: 0xff}) {
+		t.Fatalf("PlaylistStyle.SelectedBG = %+v", ps.SelectedBG)
+	}
+	if ps.Font != "Tahoma" {
+		t.Fatalf("PlaylistStyle.Font = %q, want Tahoma", ps.Font)
+	}
+
+	vc := s.VisColors()
+	if vc[0] != (color.RGBA{R: 1, G: 2, B: 3, A: 0xff}) {
+		t.Fatalf("VisColors[0] = %+v", vc[0])
+	}
+	if vc[1] != (color.RGBA{R: 10, G: 20, B: 30, A: 0xff}) {
+		t.Fatalf("VisColors[1] = %+v", vc[1])
+	}
+	if vc[2] != (color.RGBA{R: 255, G: 0, B: 128, A: 0xff}) {
+		t.Fatalf("VisColors[2] = %+v", vc[2])
+	}
+	if vc[23] != DefaultVisColors()[23] {
+		t.Fatalf("VisColors[23] = %+v, want default %+v", vc[23], DefaultVisColors()[23])
+	}
+
+	fsys := fstest.MapFS{
+		"sub/main.bmp":   {Data: bmpBytes(t, 275, 116)},
+		"sub/pledit.txt": {Data: []byte("corrupt non-ini")},
+	}
+	sfs, err := OpenFS(fsys)
+	if err != nil {
+		t.Fatalf("OpenFS = %v", err)
+	}
+	if sfs.PlaylistStyle() != DefaultPlaylistStyle() {
+		t.Fatalf("expected default playlist style on malformed pledit.txt, got %+v", sfs.PlaylistStyle())
+	}
+}
+
+func TestSliderFramesAndFontLookup(t *testing.T) {
+	volBounds := image.Rect(0, 0, 68, 420)
+	for _, v := range []float64{-1, 0, 0.25, 0.5, 1, 2} {
+		r := VolumeFrameRect(v)
+		if r.Dx() != 68 || r.Dy() != 13 || !r.In(volBounds) {
+			t.Fatalf("VolumeFrameRect(%v) = %v, out of %v", v, r, volBounds)
+		}
+	}
+
+	balBounds := image.Rect(9, 0, 47, 420)
+	for _, b := range []float64{-2, -1, 0, 0.5, 1, 2} {
+		r := BalanceFrameRect(b)
+		if r.Dx() != 38 || r.Dy() != 13 || !r.In(balBounds) {
+			t.Fatalf("BalanceFrameRect(%v) = %v, out of %v", b, r, balBounds)
+		}
+	}
+	if r := BalanceFrameRect(0); r.Min.Y != 0 {
+		t.Fatalf("BalanceFrameRect(0) = %v, want Y=0", r)
+	}
+
+	eqBounds := image.Rect(13, 164, 222, 293)
+	for _, v := range []float64{-10, 0, 50, 100, 150} {
+		r := EQSliderFrameRect(v)
+		if r.Dx() != 14 || r.Dy() != 63 || !r.In(eqBounds) {
+			t.Fatalf("EQSliderFrameRect(%v) = %v, out of %v", v, r, eqBounds)
+		}
+	}
+
+	textBounds := image.Rect(0, 0, 155, 18)
+	for _, ch := range []rune{'A', 'z', '0', '9', ':', '-', ' ', '?', '…'} {
+		r, ok := FontGlyphRect(ch)
+		if !ok || r.Dx() != 5 || r.Dy() != 6 || !r.In(textBounds) {
+			t.Fatalf("FontGlyphRect(%q) = (%v, %v)", ch, r, ok)
+		}
+	}
+	if _, ok := FontGlyphRect('🎵'); ok {
+		t.Fatal("expected unsupported emoji rune to return false")
 	}
 }
 

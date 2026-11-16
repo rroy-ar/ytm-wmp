@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"io"
 	"io/fs"
 	"os"
@@ -49,8 +50,10 @@ var ErrModernSkin = errors.New("modern Winamp skins are not supported")
 // Sheets are keyed by lowercased basename, so "Main.BMP" from any nested
 // directory becomes "main.bmp". The zero value is not usable.
 type Skin struct {
-	sheets   map[string]image.Image
-	warnings []string
+	sheets        map[string]image.Image
+	playlistStyle PlaylistStyle
+	visColors     [24]color.RGBA
+	warnings      []string
 }
 
 // Open loads a skin from a directory, .wsz, or .zip. The extension is not
@@ -79,6 +82,84 @@ func Open(name string) (*Skin, error) {
 	}
 
 	return decode(assets)
+}
+
+// OpenBytes loads a classic skin from an in-memory .wsz/.zip archive.
+func OpenBytes(data []byte) (*Skin, error) {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("open skin bytes: not a readable ZIP archive: %w", err)
+	}
+	assets, err := readZipReader(zr)
+	if err != nil {
+		return nil, fmt.Errorf("open skin bytes: %w", err)
+	}
+	return decode(assets)
+}
+
+// OpenFS loads a classic skin from an fs.FS directory tree.
+func OpenFS(fsys fs.FS) (*Skin, error) {
+	if fsys == nil {
+		return nil, errors.New("open skin fs: nil filesystem")
+	}
+	buf := newAssetBuffer()
+	err := fs.WalkDir(fsys, ".", func(file string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if file != "." && strings.EqualFold(entry.Name(), "__MACOSX") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		name, skip, err := normalizeName(file)
+		if err != nil || skip {
+			return err
+		}
+		if name == "skin.xml" {
+			return fmt.Errorf("%w: found skin.xml (a modern .wal skin renamed?)", ErrModernSkin)
+		}
+		if !isSupportedAsset(name) {
+			return nil
+		}
+		f, err := fsys.Open(file)
+		if err != nil {
+			return fmt.Errorf("read asset %q: %w", name, err)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(f, maxAssetBytes+1))
+		closeErr := f.Close()
+		if readErr != nil {
+			return fmt.Errorf("read asset %q: %w", name, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("read asset %q: %w", name, closeErr)
+		}
+		if len(data) > maxAssetBytes {
+			return fmt.Errorf("asset %q exceeds the %d-byte limit", name, maxAssetBytes)
+		}
+		return buf.add(name, data)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open skin fs: %w", err)
+	}
+	return decode(buf.assets)
+}
+
+// PlaylistStyle returns the parsed pledit.txt colors and font (or classic defaults).
+func (s *Skin) PlaylistStyle() PlaylistStyle {
+	if s == nil {
+		return DefaultPlaylistStyle()
+	}
+	return s.playlistStyle
+}
+
+// VisColors returns the parsed 24-entry viscolor.txt palette (or classic defaults).
+func (s *Skin) VisColors() [24]color.RGBA {
+	if s == nil {
+		return DefaultVisColors()
+	}
+	return s.visColors
 }
 
 // Warnings returns per-asset problems that did not prevent the skin from
@@ -148,7 +229,7 @@ func readDir(root string) (map[string][]byte, error) {
 		if name == "skin.xml" {
 			return fmt.Errorf("%w: found skin.xml (a modern .wal skin renamed?)", ErrModernSkin)
 		}
-		if !strings.HasSuffix(name, ".bmp") {
+		if !isSupportedAsset(name) {
 			return nil
 		}
 
@@ -181,7 +262,10 @@ func readZip(name string) (map[string][]byte, error) {
 		return nil, fmt.Errorf("not a readable ZIP archive: %w", err)
 	}
 	defer zr.Close()
+	return readZipReader(&zr.Reader)
+}
 
+func readZipReader(zr *zip.Reader) (map[string][]byte, error) {
 	if len(zr.File) > maxZipEntries {
 		return nil, fmt.Errorf("ZIP contains %d entries, limit is %d", len(zr.File), maxZipEntries)
 	}
@@ -199,7 +283,7 @@ func readZip(name string) (map[string][]byte, error) {
 		if assetName == "skin.xml" {
 			return nil, fmt.Errorf("%w: found skin.xml (a modern .wal skin renamed?)", ErrModernSkin)
 		}
-		if !strings.HasSuffix(assetName, ".bmp") {
+		if !isSupportedAsset(assetName) {
 			continue
 		}
 		if file.UncompressedSize64 > maxAssetBytes {
@@ -226,6 +310,10 @@ func readZip(name string) (map[string][]byte, error) {
 		}
 	}
 	return buf.assets, nil
+}
+
+func isSupportedAsset(name string) bool {
+	return strings.HasSuffix(name, ".bmp") || name == "pledit.txt" || name == "viscolor.txt"
 }
 
 // normalizeName turns a ZIP or filesystem path into a lowercased basename.
@@ -288,9 +376,16 @@ func decode(assets map[string][]byte) (*Skin, error) {
 	}
 	sort.Strings(names)
 
-	s := &Skin{sheets: make(map[string]image.Image, len(assets))}
+	s := &Skin{
+		sheets:        make(map[string]image.Image, len(assets)),
+		playlistStyle: parsePleditTxt(assets["pledit.txt"]),
+		visColors:     parseViscolorTxt(assets["viscolor.txt"]),
+	}
 	totalPixels := 0
 	for _, name := range names {
+		if !strings.HasSuffix(name, ".bmp") {
+			continue
+		}
 		data := assets[name]
 		optional := name != "main.bmp"
 

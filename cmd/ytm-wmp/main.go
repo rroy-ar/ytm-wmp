@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -19,6 +20,7 @@ import (
 	"ytm-wmp/internal/audio"
 	"ytm-wmp/internal/catalog"
 	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
+	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
 	"ytm-wmp/internal/deps"
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
@@ -45,6 +47,7 @@ func run() error {
 	var urlFlags stringListFlag
 	flag.Var(&urlFlags, "url", "YouTube video ID, watch URL, or yt-dlp search query (repeatable)")
 	skinFlag := flag.String("skin", "", "skin directory, .wsz, or .zip (default: bundled dev skin)")
+	catalogFlag := flag.String("catalog", "ytmusic", "catalog backend: ytmusic or ytdlp")
 	queryFlag := flag.String("query", "", "initial catalog search query")
 	playlistFlag := flag.String("playlist", "", "YouTube/YTM playlist URL or ID to load at startup")
 	debug := flag.Bool("debug", false, "enable debug logging")
@@ -63,9 +66,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	cat, catalogName, err := newCatalog(*catalogFlag, ytdlpTool.Path)
+	if err != nil {
+		return err
+	}
 	slog.Info("dependencies ready",
 		"yt-dlp", ytdlpTool.Version,
 		"ffmpeg", ffmpegTool.Version,
+		"catalog", catalogName,
 	)
 
 	skinPath := chooseSkin(*skinFlag)
@@ -79,7 +88,6 @@ func run() error {
 	}
 
 	resolver := ytdlp.New(ytdlp.WithBinary(ytdlpTool.Path))
-	cat := catalogytdlp.New(catalogytdlp.WithBinary(ytdlpTool.Path))
 	artCache := artwork.NewCache(artwork.WithCacheDir(artworkCacheDir()))
 	sink := audio.NewEbitenSink()
 	ctrl := playback.NewController(resolver, audio.Opener{FFmpeg: ffmpegTool.Path}, sink)
@@ -116,6 +124,18 @@ func run() error {
 		return fmt.Errorf("run game: %w", err)
 	}
 	return nil
+}
+
+func newCatalog(backend, ytdlpPath string) (catalog.Catalog, string, error) {
+	name := strings.ToLower(strings.TrimSpace(backend))
+	switch name {
+	case "", "ytmusic":
+		return catalogytmusic.New(), "ytmusic", nil
+	case "ytdlp":
+		return catalogytdlp.New(catalogytdlp.WithBinary(ytdlpPath)), "ytdlp", nil
+	default:
+		return nil, "", fmt.Errorf("unknown catalog backend %q (want ytmusic or ytdlp)", backend)
+	}
 }
 
 func startupTracks(ctx context.Context, cat catalog.Catalog, flagTargets, extra []string, playlistTarget, initialQuery string) ([]model.Track, error) {

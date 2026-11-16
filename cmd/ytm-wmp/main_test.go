@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
+	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
 	"ytm-wmp/internal/model"
 )
 
@@ -81,5 +83,35 @@ func TestStartupTracksWithQueryAndPlaylist(t *testing.T) {
 	got, err = startupTracks(context.Background(), cat, nil, nil, "", "daft punk")
 	if err != nil || len(got) != 0 {
 		t.Fatalf("startupTracks query = %+v, err=%v, want empty queue", got, err)
+	}
+}
+
+func TestNewCatalogSelection(t *testing.T) {
+	cat, name, err := newCatalog("", "")
+	if err != nil || name != "ytmusic" {
+		t.Fatalf("newCatalog(\"\") = (%T, %q, %v)", cat, name, err)
+	}
+	if _, ok := cat.(*catalogytmusic.Client); !ok {
+		t.Fatalf("newCatalog(\"\") type = %T, want *ytmusic.Client", cat)
+	}
+
+	cat, name, err = newCatalog("YTMUSIC", "")
+	if err != nil || name != "ytmusic" {
+		t.Fatalf("newCatalog(YTMUSIC) = (%T, %q, %v)", cat, name, err)
+	}
+	if _, ok := cat.(*catalogytmusic.Client); !ok {
+		t.Fatalf("newCatalog(YTMUSIC) type = %T, want *ytmusic.Client", cat)
+	}
+
+	cat, name, err = newCatalog("ytdlp", "/usr/bin/yt-dlp")
+	if err != nil || name != "ytdlp" {
+		t.Fatalf("newCatalog(ytdlp) = (%T, %q, %v)", cat, name, err)
+	}
+	if _, ok := cat.(*catalogytdlp.Client); !ok {
+		t.Fatalf("newCatalog(ytdlp) type = %T, want *ytdlp.Client", cat)
+	}
+
+	if _, _, err := newCatalog("bogus", ""); err == nil {
+		t.Fatal("newCatalog(bogus) succeeded, want error")
 	}
 }

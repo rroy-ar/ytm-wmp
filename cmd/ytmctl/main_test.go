@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"ytm-wmp/internal/artwork"
+	"ytm-wmp/internal/catalog"
+	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
 	"ytm-wmp/internal/model"
 )
 
@@ -146,5 +148,62 @@ func TestExecuteArtworkAndErrors(t *testing.T) {
 	}
 	if err := execute(context.Background(), []string{"nope"}, &out, &errOut, nil, nil); err == nil {
 		t.Fatal("unknown subcommand succeeded, want error")
+	}
+}
+
+func TestExecuteCatalogFlagSelection(t *testing.T) {
+	cat := &fakeCatalog{
+		searchTracks: []model.Track{{ID: "FGBhQbmPwH8", Title: "One More Time"}},
+	}
+
+	var gotBackends []string
+	factory := func(_ context.Context, backend string) (catalog.Catalog, error) {
+		gotBackends = append(gotBackends, backend)
+		return cat, nil
+	}
+
+	var out, errOut bytes.Buffer
+	// Default selects ytmusic.
+	if err := executeWithFactory(context.Background(), []string{"search", "daft punk"}, &out, &errOut, nil, nil, factory); err != nil {
+		t.Fatalf("default search = %v", err)
+	}
+	// Global flag before subcommand selects ytdlp.
+	if err := executeWithFactory(context.Background(), []string{"-catalog", "ytdlp", "search", "daft punk"}, &out, &errOut, nil, nil, factory); err != nil {
+		t.Fatalf("global -catalog ytdlp = %v", err)
+	}
+	// Subcommand flag overrides global default.
+	if err := executeWithFactory(context.Background(), []string{"search", "-catalog", "ytdlp", "daft punk"}, &out, &errOut, nil, nil, factory); err != nil {
+		t.Fatalf("subcommand -catalog ytdlp = %v", err)
+	}
+	// Subcommand flag overrides global flag.
+	if err := executeWithFactory(context.Background(), []string{"-catalog", "ytdlp", "search", "-catalog", "ytmusic", "daft punk"}, &out, &errOut, nil, nil, factory); err != nil {
+		t.Fatalf("subcommand override -catalog ytmusic = %v", err)
+	}
+
+	want := []string{"ytmusic", "ytdlp", "ytdlp", "ytmusic"}
+	if len(gotBackends) != len(want) {
+		t.Fatalf("gotBackends = %v, want %v", gotBackends, want)
+	}
+	for i := range want {
+		if gotBackends[i] != want[i] {
+			t.Fatalf("gotBackends[%d] = %q, want %q", i, gotBackends[i], want[i])
+		}
+	}
+
+	// Default factory instantiates pure-Go ytmusic without requiring yt-dlp.
+	defaultCat, err := defaultCatalogFactory(context.Background(), "ytmusic")
+	if err != nil {
+		t.Fatalf("defaultCatalogFactory(ytmusic) = %v", err)
+	}
+	if _, ok := defaultCat.(*catalogytmusic.Client); !ok {
+		t.Fatalf("defaultCatalogFactory(ytmusic) = %T, want *ytmusic.Client", defaultCat)
+	}
+
+	// Invalid -catalog fails cleanly both before and inside subcommands.
+	if err := execute(context.Background(), []string{"-catalog", "bogus", "search", "daft"}, &out, &errOut, nil, nil); err == nil {
+		t.Fatal("invalid global -catalog succeeded, want error")
+	}
+	if err := execute(context.Background(), []string{"search", "-catalog", "bogus", "daft"}, &out, &errOut, nil, nil); err == nil {
+		t.Fatal("invalid subcommand -catalog succeeded, want error")
 	}
 }

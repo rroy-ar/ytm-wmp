@@ -20,80 +20,158 @@ import (
 	"ytm-wmp/internal/artwork"
 	"ytm-wmp/internal/catalog"
 	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
+	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
 	"ytm-wmp/internal/deps"
 	"ytm-wmp/internal/model"
 )
+
+type catalogFactory func(ctx context.Context, backend string) (catalog.Catalog, error)
+
+type catalogSelection struct {
+	defaultBackend string
+	explicit       bool
+	injected       catalog.Catalog
+	build          catalogFactory
+}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	args := os.Args[1:]
-	var (
-		cat catalog.Catalog
-		art *artwork.Cache
-	)
-	if len(args) > 0 {
-		switch args[0] {
-		case "search", "track", "playlist":
-			tool, err := deps.Check(ctx, "yt-dlp")
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "ytmctl: %v\n", err)
-				os.Exit(1)
-			}
-			cat = catalogytdlp.New(catalogytdlp.WithBinary(tool.Path))
-		case "artwork":
-			art = artwork.NewCache(artwork.WithCacheDir(defaultArtworkDir()))
-			if tool, err := deps.Check(ctx, "yt-dlp"); err == nil {
-				cat = catalogytdlp.New(catalogytdlp.WithBinary(tool.Path))
-			}
-		}
-	}
-
-	if err := execute(ctx, args, os.Stdout, os.Stderr, cat, art); err != nil {
+	if err := execute(ctx, os.Args[1:], os.Stdout, os.Stderr, nil, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "ytmctl: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer, cat catalog.Catalog, art *artwork.Cache) error {
-	if len(args) == 0 {
+	return executeWithFactory(ctx, args, stdout, stderr, cat, art, defaultCatalogFactory)
+}
+
+func executeWithFactory(ctx context.Context, args []string, stdout, stderr io.Writer, cat catalog.Catalog, art *artwork.Cache, factory catalogFactory) error {
+	if factory == nil {
+		factory = defaultCatalogFactory
+	}
+
+	globalFS := flag.NewFlagSet("ytmctl", flag.ContinueOnError)
+	globalFS.SetOutput(stderr)
+	globalCat := globalFS.String("catalog", "ytmusic", "catalog backend: ytmusic or ytdlp")
+	if err := globalFS.Parse(args); err != nil {
+		return err
+	}
+	globalExplicit := flagSetExplicitly(globalFS, "catalog")
+	backend, err := normalizeCatalogBackend(*globalCat)
+	if err != nil {
+		return err
+	}
+
+	rest := globalFS.Args()
+	if len(rest) == 0 {
 		printUsage(stderr)
 		return errors.New("missing subcommand")
 	}
 
-	subcmd := args[0]
-	rest := args[1:]
+	sel := catalogSelection{
+		defaultBackend: backend,
+		explicit:       globalExplicit,
+		injected:       cat,
+		build:          factory,
+	}
+
+	subcmd := rest[0]
+	subArgs := rest[1:]
 
 	switch subcmd {
 	case "search":
-		return runSearch(ctx, rest, stdout, stderr, cat)
+		return runSearch(ctx, subArgs, stdout, stderr, sel)
 	case "track":
-		return runTrack(ctx, rest, stdout, stderr, cat)
+		return runTrack(ctx, subArgs, stdout, stderr, sel)
 	case "playlist":
-		return runPlaylist(ctx, rest, stdout, stderr, cat)
+		return runPlaylist(ctx, subArgs, stdout, stderr, sel)
 	case "artwork":
-		return runArtwork(ctx, rest, stdout, stderr, cat, art)
+		return runArtwork(ctx, subArgs, stdout, stderr, sel, art)
 	default:
 		printUsage(stderr)
 		return fmt.Errorf("unknown subcommand %q", subcmd)
 	}
 }
 
-func runSearch(ctx context.Context, args []string, stdout, stderr io.Writer, cat catalog.Catalog) error {
+func defaultCatalogFactory(ctx context.Context, backend string) (catalog.Catalog, error) {
+	name, err := normalizeCatalogBackend(backend)
+	if err != nil {
+		return nil, err
+	}
+	switch name {
+	case "ytmusic":
+		return catalogytmusic.New(), nil
+	case "ytdlp":
+		tool, err := deps.Check(ctx, "yt-dlp")
+		if err != nil {
+			return nil, err
+		}
+		return catalogytdlp.New(catalogytdlp.WithBinary(tool.Path)), nil
+	default:
+		return nil, fmt.Errorf("unknown catalog backend %q (want ytmusic or ytdlp)", backend)
+	}
+}
+
+func normalizeCatalogBackend(backend string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(backend))
+	switch name {
+	case "", "ytmusic":
+		return "ytmusic", nil
+	case "ytdlp":
+		return "ytdlp", nil
+	default:
+		return "", fmt.Errorf("unknown catalog backend %q (want ytmusic or ytdlp)", backend)
+	}
+}
+
+func flagSetExplicitly(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
+}
+
+func (s catalogSelection) resolve(ctx context.Context, fs *flag.FlagSet, subFlag string) (catalog.Catalog, error) {
+	backend, err := normalizeCatalogBackend(subFlag)
+	if err != nil {
+		return nil, err
+	}
+	subExplicit := flagSetExplicitly(fs, "catalog")
+	if s.injected != nil && !s.explicit && !subExplicit {
+		return s.injected, nil
+	}
+	cat, err := s.build(ctx, backend)
+	if err != nil {
+		return nil, err
+	}
+	if cat == nil {
+		return nil, errors.New("catalog unavailable")
+	}
+	return cat, nil
+}
+
+func runSearch(ctx context.Context, args []string, stdout, stderr io.Writer, sel catalogSelection) error {
 	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", catalog.DefaultSearchLimit, "maximum search results")
 	asJSON := fs.Bool("json", false, "output JSON")
+	catFlag := fs.String("catalog", sel.defaultBackend, "catalog backend: ytmusic or ytdlp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	query := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	if query == "" {
-		return errors.New("usage: ytmctl search [-limit 10] [-json] <query...>")
+		return errors.New("usage: ytmctl search [-catalog ytmusic|ytdlp] [-limit 10] [-json] <query...>")
 	}
-	if cat == nil {
-		return errors.New("catalog unavailable")
+	cat, err := sel.resolve(ctx, fs, *catFlag)
+	if err != nil {
+		return err
 	}
 
 	tracks, err := cat.Search(ctx, query, *limit)
@@ -106,18 +184,20 @@ func runSearch(ctx context.Context, args []string, stdout, stderr io.Writer, cat
 	return writeTracks(stdout, tracks)
 }
 
-func runTrack(ctx context.Context, args []string, stdout, stderr io.Writer, cat catalog.Catalog) error {
+func runTrack(ctx context.Context, args []string, stdout, stderr io.Writer, sel catalogSelection) error {
 	fs := flag.NewFlagSet("track", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	asJSON := fs.Bool("json", false, "output JSON")
+	catFlag := fs.String("catalog", sel.defaultBackend, "catalog backend: ytmusic or ytdlp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: ytmctl track [-json] <id-or-url>")
+		return errors.New("usage: ytmctl track [-catalog ytmusic|ytdlp] [-json] <id-or-url>")
 	}
-	if cat == nil {
-		return errors.New("catalog unavailable")
+	cat, err := sel.resolve(ctx, fs, *catFlag)
+	if err != nil {
+		return err
 	}
 
 	tr, err := cat.Track(ctx, fs.Arg(0))
@@ -130,19 +210,21 @@ func runTrack(ctx context.Context, args []string, stdout, stderr io.Writer, cat 
 	return writeTracks(stdout, []model.Track{tr})
 }
 
-func runPlaylist(ctx context.Context, args []string, stdout, stderr io.Writer, cat catalog.Catalog) error {
+func runPlaylist(ctx context.Context, args []string, stdout, stderr io.Writer, sel catalogSelection) error {
 	fs := flag.NewFlagSet("playlist", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", catalogytdlp.DefaultPlaylistLimit, "maximum playlist items to display")
 	asJSON := fs.Bool("json", false, "output JSON")
+	catFlag := fs.String("catalog", sel.defaultBackend, "catalog backend: ytmusic or ytdlp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: ytmctl playlist [-limit 100] [-json] <id-or-url>")
+		return errors.New("usage: ytmctl playlist [-catalog ytmusic|ytdlp] [-limit 100] [-json] <id-or-url>")
 	}
-	if cat == nil {
-		return errors.New("catalog unavailable")
+	cat, err := sel.resolve(ctx, fs, *catFlag)
+	if err != nil {
+		return err
 	}
 
 	tracks, err := cat.Playlist(ctx, fs.Arg(0))
@@ -158,15 +240,19 @@ func runPlaylist(ctx context.Context, args []string, stdout, stderr io.Writer, c
 	return writeTracks(stdout, tracks)
 }
 
-func runArtwork(ctx context.Context, args []string, stdout, stderr io.Writer, cat catalog.Catalog, art *artwork.Cache) error {
+func runArtwork(ctx context.Context, args []string, stdout, stderr io.Writer, sel catalogSelection, art *artwork.Cache) error {
 	fs := flag.NewFlagSet("artwork", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cacheDir := fs.String("cache-dir", "", "artwork disk cache directory")
+	catFlag := fs.String("catalog", sel.defaultBackend, "catalog backend: ytmusic or ytdlp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 || fs.NArg() > 2 {
-		return errors.New("usage: ytmctl artwork [-cache-dir dir] <video-id> [thumbnail-url]")
+		return errors.New("usage: ytmctl artwork [-catalog ytmusic|ytdlp] [-cache-dir dir] <video-id> [thumbnail-url]")
+	}
+	if _, err := normalizeCatalogBackend(*catFlag); err != nil {
+		return err
 	}
 
 	videoID := strings.TrimSpace(fs.Arg(0))
@@ -184,9 +270,13 @@ func runArtwork(ctx context.Context, args []string, stdout, stderr io.Writer, ca
 		art = artwork.NewCache(artwork.WithCacheDir(defaultArtworkDir()))
 	}
 
-	if thumbURL == "" && cat != nil {
-		if tr, err := cat.Track(ctx, videoID); err == nil {
-			thumbURL = tr.ThumbnailURL
+	if thumbURL == "" {
+		if cat, err := sel.resolve(ctx, fs, *catFlag); err == nil && cat != nil {
+			if tr, err := cat.Track(ctx, videoID); err == nil {
+				thumbURL = tr.ThumbnailURL
+			}
+		} else if err != nil && (sel.explicit || flagSetExplicitly(fs, "catalog")) {
+			return err
 		}
 	}
 	if thumbURL == "" {
@@ -244,5 +334,5 @@ func defaultArtworkDir() string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: ytmctl <search|track|playlist|artwork> [flags] <args>")
+	fmt.Fprintln(w, "usage: ytmctl [-catalog ytmusic|ytdlp] <search|track|playlist|artwork> [flags] <args>")
 }

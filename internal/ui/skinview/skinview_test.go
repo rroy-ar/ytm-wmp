@@ -111,3 +111,33 @@ func TestViewTreatsTruncatedSheetAsMissing(t *testing.T) {
 		t.Fatalf("placeholder size = %v, want %v", got, want)
 	}
 }
+
+func TestViewCachesSliderFramesGlyphsAndColors(t *testing.T) {
+	s, err := skin.Open(filepath.Join("..", "..", "..", "assets", "dev-skin"))
+	if err != nil {
+		t.Fatalf("Open(dev skin) = %v", err)
+	}
+	view := New(s)
+
+	if vf := view.VolumeFrame(0.5); vf.Bounds().Size() != image.Pt(68, 13) {
+		t.Fatalf("VolumeFrame size = %v, want 68x13", vf.Bounds().Size())
+	}
+	if bf := view.BalanceFrame(-0.5); bf.Bounds().Size() != image.Pt(38, 13) {
+		t.Fatalf("BalanceFrame size = %v, want 38x13", bf.Bounds().Size())
+	}
+	if ef := view.EQFrame(50); ef.Bounds().Size() != image.Pt(14, 63) {
+		t.Fatalf("EQFrame size = %v, want 14x63", ef.Bounds().Size())
+	}
+	if g, ok := view.Glyph('A'); !ok || g.Bounds().Size() != image.Pt(5, 6) {
+		t.Fatalf("Glyph('A') = (%v, %v), want 5x6", g, ok)
+	}
+	if g, ok := view.Glyph('🚀'); !ok || g.Bounds().Size() != image.Pt(5, 6) {
+		t.Fatalf("Glyph fallback for unmapped rune = (%v, %v), want '?' 5x6", g, ok)
+	}
+	if c := view.EQGraphColor(0); c.A != 0xff {
+		t.Fatalf("EQGraphColor(0) alpha = %d, want 255", c.A)
+	}
+	if ps := view.PlaylistStyle(); ps.Normal.A != 0xff {
+		t.Fatalf("PlaylistStyle = %+v", ps)
+	}
+}

@@ -30,7 +30,7 @@ import (
 const (
 	// defaultTarget keeps the PoC's one track when launched with no flags so a
 	// bare `go run ./cmd/ytm-wmp` still demonstrates playback immediately.
-	defaultTarget = "https://www.youtube.com/watch?v=0wRYvsfhsR8"
+	defaultTarget = "0wRYvsfhsR8"
 	devSkinPath   = "assets/dev-skin"
 )
 
@@ -187,13 +187,13 @@ func (f *stringListFlag) Set(value string) error {
 func explicitTracks(flagTargets, extra []string) []model.Track {
 	var tracks []model.Track
 	for _, target := range flagTargets {
-		if target != "" {
-			tracks = append(tracks, model.Track{ID: target})
+		if id := model.NormalizeTrackID(target); id != "" {
+			tracks = append(tracks, model.Track{ID: id})
 		}
 	}
 	for _, arg := range extra {
-		if arg != "" {
-			tracks = append(tracks, model.Track{ID: arg})
+		if id := model.NormalizeTrackID(arg); id != "" {
+			tracks = append(tracks, model.Track{ID: id})
 		}
 	}
 	return tracks

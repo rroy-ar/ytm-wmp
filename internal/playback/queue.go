@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"ytm-wmp/internal/model"
-	"ytm-wmp/internal/ytdlp"
 )
 
 const maxHistory = 256
@@ -253,21 +252,14 @@ func (q *queue) UpdateTrack(meta model.Track) bool {
 }
 
 func normalizedTrackID(id string) string {
-	trimmed := strings.TrimSpace(id)
-	if trimmed == "" {
-		return ""
-	}
-	if vid := ytdlp.VideoID(trimmed); vid != "" {
-		return vid
-	}
-	return trimmed
+	return model.NormalizeTrackID(id)
 }
 
 func tracksMatchID(existingID, rawMetaID, normMetaID string) bool {
 	if existingID == rawMetaID || strings.TrimSpace(existingID) == normMetaID {
 		return true
 	}
-	vid := ytdlp.VideoID(existingID)
+	vid := model.VideoID(existingID)
 	return vid != "" && vid == normMetaID
 }
 

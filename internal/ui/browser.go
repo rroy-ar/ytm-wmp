@@ -18,7 +18,6 @@ import (
 	"ytm-wmp/internal/catalog"
 	"ytm-wmp/internal/model"
 	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/ytdlp"
 )
 
 const maxArtTextureCache = 64
@@ -198,7 +197,7 @@ func (g *Game) maybeEnrichTrack(tr model.Track) {
 	if g.cat == nil || g.ctrl == nil {
 		return
 	}
-	vid := normalizedArtID(tr.ID)
+	vid := model.NormalizeTrackID(tr.ID)
 	if vid == "" {
 		return
 	}
@@ -246,7 +245,7 @@ func (g *Game) requestArtwork(tr model.Track) {
 	if g.art == nil {
 		return
 	}
-	vid := normalizedArtID(tr.ID)
+	vid := model.NormalizeTrackID(tr.ID)
 	if vid == "" {
 		return
 	}
@@ -622,7 +621,7 @@ func (g *Game) drawScaledImage(dst, src *ebiten.Image, rect image.Rectangle) {
 }
 
 func (g *Game) artworkListImage(tr model.Track) *ebiten.Image {
-	vid := normalizedArtID(tr.ID)
+	vid := model.NormalizeTrackID(tr.ID)
 	if vid != "" {
 		if tex, ok := g.artTex[vid]; ok && tex.list != nil {
 			return tex.list
@@ -632,7 +631,7 @@ func (g *Game) artworkListImage(tr model.Track) *ebiten.Image {
 }
 
 func (g *Game) artworkNowPlayingImage(tr model.Track) *ebiten.Image {
-	vid := normalizedArtID(tr.ID)
+	vid := model.NormalizeTrackID(tr.ID)
 	if vid != "" {
 		if tex, ok := g.artTex[vid]; ok {
 			if tex.nowPlaying != nil {
@@ -644,17 +643,6 @@ func (g *Game) artworkNowPlayingImage(tr model.Track) *ebiten.Image {
 		}
 	}
 	return g.artPlaceholder
-}
-
-func normalizedArtID(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-	if vid := ytdlp.VideoID(trimmed); vid != "" {
-		return vid
-	}
-	return trimmed
 }
 
 func trackDisplayTitle(tr model.Track) string {

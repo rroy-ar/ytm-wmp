@@ -49,6 +49,11 @@ func TestInitialTracks(t *testing.T) {
 	if len(got) != 2 || got[0].ID != "id1" || got[1].ID != "id2" {
 		t.Fatalf("initialTracks(flags, args) = %+v", got)
 	}
+
+	got = initialTracks([]string{"https://www.youtube.com/watch?v=0wRYvsfhsR8&t=12"}, nil)
+	if len(got) != 1 || got[0].ID != "0wRYvsfhsR8" {
+		t.Fatalf("initialTracks(watch URL) = %+v, want normalized ID 0wRYvsfhsR8", got)
+	}
 }
 
 type fakeStartupCatalog struct {

@@ -8,9 +8,9 @@ Guidelines for coding agents working in `ytm-wmp`.
 |------|----------------|
 | `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-query`, `-playlist`, `-debug`), `deps.Check`, wiring, signal handling, `ebiten.RunGame` |
 | `cmd/ytmctl/` | Terminal debug CLI for `search`, `track`, `playlist`, and `artwork` |
-| `internal/model/` | Shared domain types (`Track`, `StreamInfo`) |
+| `internal/model/` | Shared domain types (`Track`, `StreamInfo`) and YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`, `DefaultThumbnailURL`) |
 | `internal/deps/` | Startup discovery and version checks for `yt-dlp` and `ffmpeg` |
-| `internal/ytdlp/` | Stream URL resolution (`-g`), YouTube `VideoID`/`IsVideoID` normalization, and 5-hour URL cache |
+| `internal/ytdlp/` | Stream URL resolution (`-g`) and 5-hour URL cache |
 | `internal/catalog/` | `Catalog` interface, `IsPlaylistTarget`, and debounced, generation-tagged async `Searcher` |
 | `internal/catalog/ytdlp/` | `yt-dlp -J` catalog implementation (search, track metadata, playlists), stdout limits, and in-memory caches |
 | `internal/artwork/` | Pure-Go thumbnail fetch, JPEG/PNG/WebP decode, `64x64`/`300x300` bilinear resize, atomic disk cache, in-memory LRU, and `Placeholder` |

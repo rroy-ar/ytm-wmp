@@ -20,7 +20,6 @@ import (
 
 	"ytm-wmp/internal/catalog"
 	"ytm-wmp/internal/model"
-	ytdlpresolver "ytm-wmp/internal/ytdlp"
 )
 
 const (
@@ -282,7 +281,7 @@ func (c *Client) Track(ctx context.Context, idOrURL string) (model.Track, error)
 		return model.Track{}, catalog.ErrEmptyQuery
 	}
 
-	vid := ytdlpresolver.VideoID(idOrURL)
+	vid := model.VideoID(idOrURL)
 	if vid != "" && c.trackTTL > 0 {
 		now := c.now()
 		c.mu.Lock()
@@ -294,7 +293,7 @@ func (c *Client) Track(ctx context.Context, idOrURL string) (model.Track, error)
 	}
 
 	target := idOrURL
-	if ytdlpresolver.IsVideoID(idOrURL) {
+	if model.IsVideoID(idOrURL) {
 		target = "https://www.youtube.com/watch?v=" + idOrURL
 	}
 
@@ -430,12 +429,12 @@ type ytdlpThumbnail struct {
 }
 
 func toTrack(e ytdlpEntry) (model.Track, bool) {
-	id := strings.TrimSpace(e.ID)
+	id := model.NormalizeTrackID(e.ID)
 	if id == "" {
-		id = ytdlpresolver.VideoID(e.URL)
+		id = model.VideoID(e.URL)
 	}
 	if id == "" {
-		id = ytdlpresolver.VideoID(e.WebpageURL)
+		id = model.VideoID(e.WebpageURL)
 	}
 	if id == "" {
 		return model.Track{}, false
@@ -509,10 +508,7 @@ func pickThumbnail(thumbs []ytdlpThumbnail, fallbackURL, id string) string {
 	if fb := strings.TrimSpace(fallbackURL); isHTTPURL(fb) {
 		return fb
 	}
-	if ytdlpresolver.IsVideoID(id) {
-		return "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
-	}
-	return ""
+	return model.DefaultThumbnailURL(id)
 }
 
 func isHTTPURL(raw string) bool {

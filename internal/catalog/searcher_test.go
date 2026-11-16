@@ -13,8 +13,10 @@ type fakeCatalog struct {
 	mu       sync.Mutex
 	searches []string
 	playlist []string
+	tracks   []string
 	searchFn func(ctx context.Context, query string, limit int) ([]model.Track, error)
 	playFn   func(ctx context.Context, idOrURL string) ([]model.Track, error)
+	trackFn  func(ctx context.Context, id string) (model.Track, error)
 }
 
 func (f *fakeCatalog) Search(ctx context.Context, query string, limit int) ([]model.Track, error) {
@@ -39,7 +41,14 @@ func (f *fakeCatalog) Playlist(ctx context.Context, idOrURL string) ([]model.Tra
 	return []model.Track{{ID: "pl-1", Title: "Playlist Track"}}, nil
 }
 
-func (f *fakeCatalog) Track(context.Context, string) (model.Track, error) {
+func (f *fakeCatalog) Track(ctx context.Context, id string) (model.Track, error) {
+	f.mu.Lock()
+	f.tracks = append(f.tracks, id)
+	fn := f.trackFn
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, id)
+	}
 	return model.Track{}, ErrNotFound
 }
 
@@ -53,6 +62,12 @@ func (f *fakeCatalog) playlistTargets() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.playlist...)
+}
+
+func (f *fakeCatalog) trackTargets() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.tracks...)
 }
 
 func TestIsPlaylistTarget(t *testing.T) {
@@ -252,5 +267,63 @@ func TestSearcherCloseWaitsForWorkers(t *testing.T) {
 	s.Close()
 	if got := s.SetQuery("after-close"); got != 0 {
 		t.Fatalf("SetQuery after Close = %d, want 0", got)
+	}
+}
+
+func TestSearcherRoutesWatchURLToTrack(t *testing.T) {
+	watchURL := "https://www.youtube.com/watch?v=oz3LxqoyQFQ&list=RDoz3LxqoyQFQ&start_radio=1"
+	cat := &fakeCatalog{
+		trackFn: func(_ context.Context, id string) (model.Track, error) {
+			return model.Track{ID: id, Title: "Watch Track"}, nil
+		},
+	}
+	s := NewSearcher(cat, WithDebounce(0))
+	defer s.Close()
+
+	s.Submit(watchURL)
+
+	select {
+	case res := <-s.Results():
+		if res.Err != nil {
+			t.Fatalf("Results err = %v, want nil", res.Err)
+		}
+		if res.IsPlaylist {
+			t.Fatalf("IsPlaylist = true, want false")
+		}
+		if len(res.Tracks) != 1 || res.Tracks[0].ID != "oz3LxqoyQFQ" || res.Tracks[0].Title != "Watch Track" {
+			t.Fatalf("Tracks = %+v, want single track oz3LxqoyQFQ", res.Tracks)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for watch URL track result")
+	}
+
+	if got := cat.trackTargets(); len(got) != 1 || got[0] != "oz3LxqoyQFQ" {
+		t.Fatalf("Track calls = %v, want [oz3LxqoyQFQ]", got)
+	}
+	if got := cat.searchQueries(); len(got) != 0 {
+		t.Fatalf("Search calls = %v, want none when Track succeeds", got)
+	}
+
+	// When Track returns ErrNotFound, Searcher falls back to Search with the video ID.
+	cat.mu.Lock()
+	cat.trackFn = func(context.Context, string) (model.Track, error) {
+		return model.Track{}, ErrNotFound
+	}
+	cat.mu.Unlock()
+
+	s.Submit(watchURL)
+	select {
+	case res := <-s.Results():
+		if res.Err != nil {
+			t.Fatalf("fallback Results err = %v, want nil", res.Err)
+		}
+		if len(res.Tracks) != 1 || res.Tracks[0].ID != "id-oz3LxqoyQFQ" {
+			t.Fatalf("fallback Tracks = %+v, want search fallback for oz3LxqoyQFQ", res.Tracks)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for fallback watch URL search result")
+	}
+	if got := cat.searchQueries(); len(got) != 1 || got[0] != "oz3LxqoyQFQ" {
+		t.Fatalf("fallback Search calls = %v, want [oz3LxqoyQFQ]", got)
 	}
 }

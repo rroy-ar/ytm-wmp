@@ -215,6 +215,15 @@ func (s *Searcher) runWorker(ctx context.Context, cancel context.CancelFunc, gen
 	)
 	if isPlaylist {
 		tracks, err = s.cat.Playlist(ctx, q)
+	} else if vid := model.VideoID(q); vid != "" && !model.IsVideoID(q) {
+		tr, trackErr := s.cat.Track(ctx, vid)
+		if trackErr == nil {
+			tracks = []model.Track{tr}
+		} else if errors.Is(trackErr, context.Canceled) {
+			return
+		} else {
+			tracks, err = s.cat.Search(ctx, vid, s.limit)
+		}
 	} else {
 		tracks, err = s.cat.Search(ctx, q, s.limit)
 	}

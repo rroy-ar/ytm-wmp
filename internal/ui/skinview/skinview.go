@@ -269,3 +269,27 @@ func (v *View) SheetSize(name string) (image.Point, bool) {
 	}
 	return img.Bounds().Size(), true
 }
+
+// Deallocate releases all GPU sheet and placeholder textures held by the view.
+func (v *View) Deallocate() {
+	if v == nil {
+		return
+	}
+	for k, img := range v.sheets {
+		if img != nil {
+			img.Deallocate()
+		}
+		delete(v.sheets, k)
+	}
+	clear(v.sprites)
+	for k, img := range v.placeholders {
+		if img != nil {
+			img.Deallocate()
+		}
+		delete(v.placeholders, k)
+	}
+	clear(v.missing)
+	v.volFrames = [28]*ebiten.Image{}
+	v.balFrames = [28]*ebiten.Image{}
+	v.eqFrames = [28]*ebiten.Image{}
+}

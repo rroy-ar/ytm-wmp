@@ -141,3 +141,24 @@ func TestViewCachesSliderFramesGlyphsAndColors(t *testing.T) {
 		t.Fatalf("PlaylistStyle = %+v", ps)
 	}
 }
+
+func TestViewDeallocateClearsCachesAndIsIdempotent(t *testing.T) {
+	s, err := skin.Open(filepath.Join("..", "..", "..", "assets", "dev-skin"))
+	if err != nil {
+		t.Fatalf("Open(dev skin) = %v", err)
+	}
+	view := New(s)
+	_ = view.Sprite("UNKNOWN_TEST_SPRITE")
+	view.Deallocate()
+	view.Deallocate()
+
+	if _, ok := view.SheetSize("main.bmp"); ok {
+		t.Fatal("SheetSize(main.bmp) should be false after Deallocate")
+	}
+	if view.HasSprite(skin.MainBackground) {
+		t.Fatal("HasSprite should be false after Deallocate")
+	}
+
+	var nilView *View
+	nilView.Deallocate()
+}

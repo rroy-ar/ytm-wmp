@@ -42,6 +42,7 @@ const (
 	WidgetMainPosition = "main.position"
 	WidgetMainShuffle  = "main.shuffle"
 	WidgetMainRepeat   = "main.repeat"
+	WidgetMainSkin     = "main.skin"
 
 	WidgetEQClose   = "eq.close"
 	WidgetEQOn      = "eq.on"
@@ -114,6 +115,7 @@ var (
 	MainPositionBounds = image.Rect(16, 72, 264, 82)
 	MainShuffleBounds  = image.Rect(164, 89, 210, 104)
 	MainRepeatBounds   = image.Rect(210, 89, 238, 104)
+	MainSkinBounds     = image.Rect(252, 90, 266, 104)
 
 	NowPlayingArtBounds    = image.Rect(6, 130, 32, 156)
 	BrowserModePLBounds    = image.Rect(228, 117, 272, 128)
@@ -166,6 +168,7 @@ var mainControlWidgets = []Widget{
 	{ID: WidgetMainPosition, Bounds: MainPositionBounds},
 	{ID: WidgetMainShuffle, Bounds: MainShuffleBounds},
 	{ID: WidgetMainRepeat, Bounds: MainRepeatBounds},
+	{ID: WidgetMainSkin, Bounds: MainSkinBounds},
 }
 
 var resultRowWidgets = []string{

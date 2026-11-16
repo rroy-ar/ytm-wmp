@@ -114,6 +114,7 @@ func run() error {
 		ui.WithArtwork(artCache),
 		ui.WithInitialQuery(*queryFlag),
 		ui.WithSkinName(filepath.Base(skinPath)),
+		ui.WithSkinPath(skinPath),
 		ui.WithWindowResizer(ebiten.SetWindowSize),
 		ui.WithEQPath(userConfigPath("eq.json")),
 		ui.WithPlaylistPath(userConfigPath("playlist.m3u")),

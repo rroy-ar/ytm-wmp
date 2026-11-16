@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"archive/zip"
 	"context"
 	"image"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -299,5 +301,146 @@ func TestEQControlsAndPersistence(t *testing.T) {
 	defer g2.Close()
 	if !g2.eqOn || !g2.eqAuto || g2.eqPreamp != 77 || g2.eqBands[3] != 88 {
 		t.Fatalf("reloaded EQ state = on=%v auto=%v preamp=%v band3=%v", g2.eqOn, g2.eqAuto, g2.eqPreamp, g2.eqBands[3])
+	}
+}
+
+func TestMainSkinButtonOpensPickerAndReloadsSkin(t *testing.T) {
+	devDir := filepath.Join("..", "..", "assets", "dev-skin")
+	initialSkin, err := skin.Open(devDir)
+	if err != nil {
+		t.Fatalf("Open(dev skin) = %v", err)
+	}
+
+	// Build a minimal valid .wsz archive in a temp dir.
+	wszDir := t.TempDir()
+	wszPath := filepath.Join(wszDir, "custom.wsz")
+	mainData, err := os.ReadFile(filepath.Join(devDir, "main.bmp"))
+	if err != nil {
+		t.Fatalf("read dev main.bmp: %v", err)
+	}
+	writeTestZip(t, wszPath, map[string][]byte{"main.bmp": mainData})
+
+	badPath := filepath.Join(wszDir, "modern.wsz")
+	writeTestZip(t, badPath, map[string][]byte{"skin.xml": []byte("<WinampAbstractionLayer/>")})
+
+	var mode atomic.Int32 // 0=valid, 1=cancel, 2=invalid, 3=gate
+	var calls atomic.Int32
+	gate := make(chan struct{})
+	started := make(chan struct{}, 1)
+
+	g := NewGame(
+		context.Background(),
+		initialSkin,
+		newFakeController(),
+		&fakeAudioLifecycle{},
+		WithSkinPath(devDir),
+		WithSkinPicker(func(ctx context.Context, startDir string) (string, error) {
+			calls.Add(1)
+			switch mode.Load() {
+			case 0:
+				return wszPath, nil
+			case 1:
+				return "", nil
+			case 2:
+				return badPath, nil
+			default:
+				select {
+				case started <- struct{}{}:
+				default:
+				}
+				select {
+				case <-gate:
+					return "", nil
+				case <-ctx.Done():
+					return "", ctx.Err()
+				}
+			}
+		}),
+	)
+	defer g.Close()
+	if err := g.Update(); err != nil {
+		t.Fatalf("initial Update = %v", err)
+	}
+
+	// 1. Picking a valid .wsz replaces skin, view, skinName, and skinPath.
+	g.onClick(WidgetMainSkin)
+	waitGameCondition(t, g, func() bool {
+		return g.skinName == "custom.wsz" && !g.skinPickActive
+	})
+	if g.skinPath != wszPath {
+		t.Fatalf("skinPath = %q, want %q", g.skinPath, wszPath)
+	}
+	if g.errText != "" {
+		t.Fatalf("unexpected errText = %q", g.errText)
+	}
+	if g.view == nil || g.view.HasSprite(skin.PlayButton) {
+		t.Fatalf("new minimal skin view should not have cbuttons play sprite")
+	}
+	if !strings.Contains(g.transientMsg, "CUSTOM.WSZ") {
+		t.Fatalf("transientMsg = %q, want skin name announcement", g.transientMsg)
+	}
+
+	// 2. Cancelling leaves the active skin untouched with no error.
+	prevSkin := g.skin
+	prevView := g.view
+	mode.Store(1)
+	g.onClick(WidgetMainSkin)
+	waitGameCondition(t, g, func() bool {
+		return calls.Load() == 2 && !g.skinPickActive
+	})
+	if g.skin != prevSkin || g.view != prevView || g.errText != "" {
+		t.Fatalf("cancel altered skin/view or set errText=%q", g.errText)
+	}
+
+	// 3. Selecting a modern/invalid skin reports an error and preserves current skin.
+	mode.Store(2)
+	g.onClick(WidgetMainSkin)
+	waitGameCondition(t, g, func() bool {
+		return g.errText != "" && !g.skinPickActive
+	})
+	if g.skin != prevSkin || g.view != prevView {
+		t.Fatal("invalid skin replaced active skin")
+	}
+
+	// 4. Clicking again while a dialog is open does not launch a duplicate picker.
+	mode.Store(3)
+	g.onClick(WidgetMainSkin)
+	<-started
+	g.onClick(WidgetMainSkin)
+	if calls.Load() != 4 {
+		t.Fatalf("calls = %d while picker active, want 4", calls.Load())
+	}
+	close(gate)
+	waitGameCondition(t, g, func() bool {
+		return !g.skinPickActive
+	})
+}
+
+func writeTestZip(t *testing.T, dst string, files map[string][]byte) {
+	t.Helper()
+	f, err := os.Create(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for name, data := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			_ = zw.Close()
+			_ = f.Close()
+			t.Fatal(err)
+		}
+		if _, err := w.Write(data); err != nil {
+			_ = zw.Close()
+			_ = f.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

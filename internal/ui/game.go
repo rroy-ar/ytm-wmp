@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log/slog"
 	"math"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -121,19 +122,44 @@ func WithSkinName(name string) GameOption {
 	return func(g *Game) { g.skinName = name }
 }
 
+// WithSkinPath records the loaded skin path so the skin picker opens in its directory.
+func WithSkinPath(path string) GameOption {
+	return func(g *Game) {
+		g.skinPath = path
+		if g.skinName == "" && path != "" {
+			g.skinName = filepath.Base(path)
+		}
+	}
+}
+
+// WithSkinPicker overrides the OS file chooser used by the main window skin button.
+func WithSkinPicker(fn SkinPickerFunc) GameOption {
+	return func(g *Game) { g.skinPicker = fn }
+}
+
+type skinLoadResult struct {
+	path string
+	skin *skin.Skin
+	err  error
+}
+
 // Game is the Ebitengine application: a docked Winamp rack (Main, EQ,
 // Playlist/Browser) wired to the playback actor.
 type Game struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	skin     *skin.Skin
-	skinName string
-	ctrl     PlaybackController
-	sink     AudioLifecycle
-	cat      catalog.Catalog
-	ytCat    catalog.Catalog
-	art      ArtworkSource
+	skin           *skin.Skin
+	skinName       string
+	skinPath       string
+	skinPicker     SkinPickerFunc
+	skinPickActive bool
+	skinLoadCh     chan skinLoadResult
+	ctrl           PlaybackController
+	sink           AudioLifecycle
+	cat            catalog.Catalog
+	ytCat          catalog.Catalog
+	art            ArtworkSource
 
 	view          *skinview.View
 	textFace      text.Face
@@ -176,11 +202,12 @@ type Game struct {
 func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink AudioLifecycle, opts ...GameOption) *Game {
 	ctx, cancel := context.WithCancel(parent)
 	g := &Game{
-		ctx:    ctx,
-		cancel: cancel,
-		skin:   s,
-		ctrl:   ctrl,
-		sink:   sink,
+		ctx:        ctx,
+		cancel:     cancel,
+		skin:       s,
+		ctrl:       ctrl,
+		sink:       sink,
+		skinLoadCh: make(chan skinLoadResult, 1),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -293,6 +320,7 @@ func (g *Game) Update() error {
 	}
 
 	g.drainEvents()
+	g.drainSkinLoads()
 	if g.ctrl != nil {
 		g.snap = g.ctrl.Snapshot()
 		g.hasSnap = true
@@ -557,6 +585,18 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 		snap.Repeat != playback.RepeatOff, g.pointer.Active() == WidgetMainRepeat && g.pointer.Pressed(),
 	)
 	g.drawSprite(screen, repName, MainRepeatBounds.Min)
+
+	if g.pointer.Active() == WidgetMainSkin && g.pointer.Pressed() {
+		vector.DrawFilledRect(
+			screen,
+			float32(MainSkinBounds.Min.X),
+			float32(MainSkinBounds.Min.Y),
+			float32(MainSkinBounds.Dx()),
+			float32(MainSkinBounds.Dy()),
+			color.RGBA{A: 0x48},
+			false,
+		)
+	}
 }
 
 func (g *Game) marqueeText(snap playback.Snapshot) string {
@@ -616,6 +656,10 @@ func (g *Game) Close() {
 			g.artPlaceholder.Deallocate()
 			g.artPlaceholder = nil
 		}
+		if g.view != nil {
+			g.view.Deallocate()
+			g.view = nil
+		}
 	})
 }
 
@@ -644,6 +688,10 @@ func (g *Game) onClick(id string) {
 		g.hidePL = !g.hidePL
 		g.plMenu = plMenuNone
 		g.syncWindowSize()
+		return
+	case WidgetMainSkin:
+		g.errText = ""
+		g.openSkinPicker()
 		return
 	}
 
@@ -700,6 +748,10 @@ func (g *Game) handleKeys() {
 	}
 	if g.showArtModal && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		g.showArtModal = false
+		return
+	}
+	if g.errText != "" && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.errText = ""
 		return
 	}
 	g.handlePlaylistKeys()
@@ -811,6 +863,81 @@ func (g *Game) drainEvents() {
 func (g *Game) setError(msg string) {
 	g.errText = msg
 	slog.Error("playback failed", "err", msg)
+}
+
+func (g *Game) openSkinPicker() {
+	if g.skinPickActive {
+		return
+	}
+	picker := g.skinPicker
+	if picker == nil {
+		picker = pickSkinFile
+	}
+	startDir := defaultSkinStartDir(g.skinPath)
+	g.skinPickActive = true
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		path, err := picker(g.ctx, startDir)
+		if g.ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			g.sendSkinLoad(skinLoadResult{err: err})
+			return
+		}
+		path = strings.TrimSpace(path)
+		if path == "" {
+			g.sendSkinLoad(skinLoadResult{})
+			return
+		}
+		loaded, err := skin.Open(path)
+		if g.ctx.Err() != nil {
+			return
+		}
+		g.sendSkinLoad(skinLoadResult{path: path, skin: loaded, err: err})
+	}()
+}
+
+func (g *Game) sendSkinLoad(res skinLoadResult) {
+	if g.skinLoadCh == nil {
+		return
+	}
+	select {
+	case g.skinLoadCh <- res:
+	case <-g.ctx.Done():
+	}
+}
+
+func (g *Game) drainSkinLoads() {
+	if g.skinLoadCh == nil {
+		return
+	}
+	for {
+		select {
+		case res := <-g.skinLoadCh:
+			g.skinPickActive = false
+			if res.err != nil {
+				g.setError(res.err.Error())
+				continue
+			}
+			if res.skin == nil {
+				continue
+			}
+			if g.view != nil {
+				g.view.Deallocate()
+			}
+			g.skin = res.skin
+			g.skinPath = res.path
+			g.skinName = filepath.Base(res.path)
+			g.view = skinview.New(res.skin)
+			g.errText = ""
+			g.setTransientStatus("SKIN: " + strings.ToUpper(g.skinName))
+			slog.Info("skin reloaded", "path", res.path, "sheets", res.skin.SheetNames())
+		default:
+			return
+		}
+	}
 }
 
 func (g *Game) toggleDebug() {

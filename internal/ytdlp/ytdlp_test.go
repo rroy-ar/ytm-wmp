@@ -3,6 +3,9 @@ package ytdlp
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -224,5 +227,47 @@ func TestVideoID(t *testing.T) {
 				t.Fatalf("videoID(%q) = %q, want %q", tt.target, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExecRunnerEnforcesStdoutCap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fake yt-dlp is not available on Windows")
+	}
+
+	script := filepath.Join(t.TempDir(), "big-stdout")
+	content := "#!/bin/sh\ndd if=/dev/zero bs=1024 count=16 2>/dev/null\n"
+	if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	runner := ExecRunner{MaxBytes: 4096}
+	_, _, err := runner.Output(context.Background(), script)
+	if !errors.Is(err, ErrOutputTooLarge) {
+		t.Fatalf("Output err = %v, want ErrOutputTooLarge", err)
+	}
+}
+
+func TestExecRunnerBoundsStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fake yt-dlp is not available on Windows")
+	}
+
+	script := filepath.Join(t.TempDir(), "big-stderr")
+	content := "#!/bin/sh\ndd if=/dev/zero bs=1024 count=128 >&2 2>/dev/null\nprintf 'https://stream.example/ok\\n'\n"
+	if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	runner := ExecRunner{}
+	stdout, stderr, err := runner.Output(context.Background(), script)
+	if err != nil {
+		t.Fatalf("Output err = %v", err)
+	}
+	if string(stdout) != "https://stream.example/ok\n" {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if len(stderr) != defaultStderrLimit {
+		t.Fatalf("len(stderr) = %d, want %d", len(stderr), defaultStderrLimit)
 	}
 }

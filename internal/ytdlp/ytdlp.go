@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"sync"
@@ -23,10 +24,18 @@ const (
 	// expire.
 	DefaultTTL    = 5 * time.Hour
 	defaultBinary = "yt-dlp"
+
+	// DefaultMaxStdoutBytes caps yt-dlp -g stdout so runaway output cannot OOM.
+	DefaultMaxStdoutBytes int64 = 256 << 10
+	defaultStderrLimit          = 64 << 10
 )
 
-// ErrResolve means yt-dlp could not produce a stream URL.
-var ErrResolve = errors.New("yt-dlp could not resolve stream")
+var (
+	// ErrResolve means yt-dlp could not produce a stream URL.
+	ErrResolve = errors.New("yt-dlp could not resolve stream")
+	// ErrOutputTooLarge means yt-dlp stdout exceeded the configured cap.
+	ErrOutputTooLarge = errors.New("yt-dlp output exceeded maximum size")
+)
 
 // Runner executes an external command and returns stdout, stderr, and the
 // process error separately. Tests replace this with a fake.
@@ -34,17 +43,68 @@ type Runner interface {
 	Output(ctx context.Context, name string, args ...string) (stdout, stderr []byte, err error)
 }
 
-// ExecRunner is the production Runner.
-type ExecRunner struct{}
+// ExecRunner is the production Runner with bounded stdout and stderr.
+type ExecRunner struct {
+	MaxBytes int64
+}
 
-func (ExecRunner) Output(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+func (r ExecRunner) Output(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+	maxBytes := r.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxStdoutBytes
+	}
+
 	cmd := exec.CommandContext(ctx, name, args...)
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	stderr := &limitedBuffer{max: defaultStderrLimit}
+	cmd.Stderr = stderr
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		_ = stdoutPipe.Close()
+		return nil, nil, err
+	}
 
-	stdout, err := cmd.Output()
-	return stdout, stderr.Bytes(), err
+	stdout, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxBytes+1))
+	if int64(len(stdout)) > maxBytes {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+		return nil, stderr.Bytes(), fmt.Errorf("%w (%d bytes)", ErrOutputTooLarge, maxBytes)
+	}
+
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return stdout, stderr.Bytes(), readErr
+	}
+	return stdout, stderr.Bytes(), waitErr
+}
+
+type limitedBuffer struct {
+	max int
+	buf bytes.Buffer
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.max <= 0 {
+		return len(p), nil
+	}
+	remain := b.max - b.buf.Len()
+	if remain > 0 {
+		if len(p) > remain {
+			b.buf.Write(p[:remain])
+		} else {
+			b.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (b *limitedBuffer) Bytes() []byte {
+	return b.buf.Bytes()
 }
 
 type cachedStream struct {

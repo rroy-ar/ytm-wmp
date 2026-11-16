@@ -109,13 +109,16 @@ type Game struct {
 
 	artPlaceholder *ebiten.Image
 	artResults     chan artFetchResult
-	enrichResults  chan model.Track
+	enrichResults  chan enrichFetchResult
 	artTex         map[string]artTextures
 	artOrder       []string
 	artPending     map[string]bool
 	artFailed      map[string]string
 	knownThumbURL  map[string]string
 	enriched       map[string]bool
+	enrichPending  map[string]bool
+	enrichFailed   map[string]time.Time
+	sem            chan struct{}
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
@@ -250,6 +253,15 @@ func (g *Game) Close() {
 		if g.sink != nil {
 			g.sink.Close()
 		}
+		for k, tex := range g.artTex {
+			deallocateArtTextures(tex)
+			delete(g.artTex, k)
+		}
+		g.artOrder = nil
+		if g.artPlaceholder != nil {
+			g.artPlaceholder.Deallocate()
+			g.artPlaceholder = nil
+		}
 	})
 }
 
@@ -371,8 +383,13 @@ func (g *Game) drainEvents() {
 					g.errText = ""
 				}
 			case playback.TrackChanged:
+				if vid := model.NormalizeTrackID(e.Track.ID); vid != "" {
+					delete(g.enrichFailed, vid)
+				}
 				g.maybeEnrichTrack(e.Track)
 				g.requestArtwork(e.Track)
+			case playback.QueueChanged:
+				clear(g.enrichFailed)
 			}
 		default:
 			return

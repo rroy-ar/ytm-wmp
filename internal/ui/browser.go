@@ -20,7 +20,11 @@ import (
 	"ytm-wmp/internal/playback"
 )
 
-const maxArtTextureCache = 64
+const (
+	maxArtTextureCache  = 64
+	maxBrowserWorkers   = 4
+	enrichRetryCooldown = 30 * time.Second
+)
 
 var (
 	colPanelBg      = color.RGBA{R: 0x0c, G: 0x13, B: 0x1b, A: 0xff}
@@ -36,8 +40,9 @@ var (
 )
 
 type artTextures struct {
-	list       *ebiten.Image
-	nowPlaying *ebiten.Image
+	list          *ebiten.Image
+	nowPlaying    *ebiten.Image
+	nowPlayingSrc image.Image
 }
 
 type artFetchResult struct {
@@ -47,15 +52,24 @@ type artFetchResult struct {
 	err     error
 }
 
+type enrichFetchResult struct {
+	videoID string
+	track   model.Track
+	err     error
+}
+
 func (g *Game) initBrowser() {
 	g.searchStatus = "Type query or paste URL"
 	g.artResults = make(chan artFetchResult, 32)
-	g.enrichResults = make(chan model.Track, 16)
+	g.enrichResults = make(chan enrichFetchResult, 32)
+	g.sem = make(chan struct{}, maxBrowserWorkers)
 	g.artTex = make(map[string]artTextures)
 	g.artPending = make(map[string]bool)
 	g.artFailed = make(map[string]string)
 	g.knownThumbURL = make(map[string]string)
 	g.enriched = make(map[string]bool)
+	g.enrichPending = make(map[string]bool)
+	g.enrichFailed = make(map[string]time.Time)
 
 	if g.cat != nil {
 		debounce := catalog.DefaultDebounce
@@ -81,7 +95,11 @@ func (g *Game) updateBrowser() {
 	if g.snap.Track.ID != "" {
 		g.maybeEnrichTrack(g.snap.Track)
 		g.requestArtwork(g.snap.Track)
+		if g.showArtModal {
+			g.ensureNowPlayingTexture(g.snap.Track)
+		}
 	}
+	g.enrichQueue()
 
 	g.drainArtwork()
 
@@ -122,9 +140,6 @@ func (g *Game) drainSearchResults() {
 			g.scrollOffset = 0
 			if res.IsPlaylist {
 				g.searchStatus = fmt.Sprintf("Playlist: %d tracks", len(res.Tracks))
-				if len(res.Tracks) > 0 && g.ctrl != nil {
-					g.ctrl.Send(playback.SetQueue{Tracks: res.Tracks, Index: 0})
-				}
 			} else {
 				g.searchStatus = fmt.Sprintf("%d results", len(res.Tracks))
 			}
@@ -138,8 +153,15 @@ func (g *Game) drainSearchResults() {
 func (g *Game) drainEnrichments() {
 	for {
 		select {
-		case meta := <-g.enrichResults:
-			g.requestArtwork(meta)
+		case res := <-g.enrichResults:
+			delete(g.enrichPending, res.videoID)
+			if res.err != nil {
+				g.enrichFailed[res.videoID] = time.Now()
+				continue
+			}
+			delete(g.enrichFailed, res.videoID)
+			g.enriched[res.videoID] = true
+			g.requestArtwork(res.track)
 		default:
 			return
 		}
@@ -175,19 +197,84 @@ func (g *Game) storeArtTextures(videoID string, b artwork.Bundle) {
 	if b.List != nil {
 		tex.list = ebiten.NewImageFromImage(b.List)
 	}
-	if b.NowPlaying != nil {
-		tex.nowPlaying = ebiten.NewImageFromImage(b.NowPlaying)
+	tex.nowPlayingSrc = b.NowPlaying
+	if g.showArtModal && videoID == model.NormalizeTrackID(g.snap.Track.ID) && tex.nowPlayingSrc != nil {
+		tex.nowPlaying = ebiten.NewImageFromImage(tex.nowPlayingSrc)
+		tex.nowPlayingSrc = nil
 	}
 
-	if _, exists := g.artTex[videoID]; !exists {
+	if old, exists := g.artTex[videoID]; exists {
+		deallocateArtTextures(old)
+	} else {
 		g.artOrder = append(g.artOrder, videoID)
 		for len(g.artOrder) > maxArtTextureCache {
 			oldest := g.artOrder[0]
 			g.artOrder = g.artOrder[1:]
-			delete(g.artTex, oldest)
+			if evicted, ok := g.artTex[oldest]; ok {
+				deallocateArtTextures(evicted)
+				delete(g.artTex, oldest)
+			}
 		}
 	}
 	g.artTex[videoID] = tex
+}
+
+func (g *Game) ensureNowPlayingTexture(tr model.Track) {
+	vid := model.NormalizeTrackID(tr.ID)
+	if vid == "" {
+		return
+	}
+	tex, ok := g.artTex[vid]
+	if ok {
+		if tex.nowPlaying != nil {
+			return
+		}
+		if tex.nowPlayingSrc != nil {
+			tex.nowPlaying = ebiten.NewImageFromImage(tex.nowPlayingSrc)
+			tex.nowPlayingSrc = nil
+			g.artTex[vid] = tex
+			return
+		}
+	}
+	if g.art == nil {
+		return
+	}
+	if b, memOK := g.art.LookupMemory(vid); memOK {
+		if !ok {
+			g.storeArtTextures(vid, b)
+			tex, ok = g.artTex[vid]
+		}
+		if ok && tex.nowPlaying == nil && b.NowPlaying != nil {
+			tex.nowPlaying = ebiten.NewImageFromImage(b.NowPlaying)
+			tex.nowPlayingSrc = nil
+			g.artTex[vid] = tex
+		}
+	}
+}
+
+func deallocateArtTextures(tex artTextures) {
+	if tex.list != nil {
+		tex.list.Deallocate()
+	}
+	if tex.nowPlaying != nil {
+		tex.nowPlaying.Deallocate()
+	}
+}
+
+func (g *Game) enrichQueue() {
+	if g.cat == nil || g.ctrl == nil || len(g.snap.Queue) == 0 {
+		return
+	}
+	maxInFlight := cap(g.sem)
+	if maxInFlight <= 0 {
+		maxInFlight = maxBrowserWorkers
+	}
+	for _, tr := range g.snap.Queue {
+		if len(g.enrichPending) >= maxInFlight {
+			return
+		}
+		g.maybeEnrichTrack(tr)
+	}
 }
 
 func (g *Game) maybeEnrichTrack(tr model.Track) {
@@ -201,28 +288,39 @@ func (g *Game) maybeEnrichTrack(tr model.Track) {
 	if tr.Title != "" && tr.Duration > 0 && tr.ThumbnailURL != "" {
 		return
 	}
-	if g.enriched[vid] {
+	if g.enriched[vid] || g.enrichPending[vid] {
 		return
 	}
-	g.enriched[vid] = true
+	if failedAt, failed := g.enrichFailed[vid]; failed && time.Since(failedAt) < enrichRetryCooldown {
+		return
+	}
+	g.enrichPending[vid] = true
 
 	g.wg.Add(1)
-	go func(rawID string) {
+	go func(id string) {
 		defer g.wg.Done()
-		meta, err := g.cat.Track(g.ctx, rawID)
+		if g.sem != nil {
+			select {
+			case g.sem <- struct{}{}:
+				defer func() { <-g.sem }()
+			case <-g.ctx.Done():
+				return
+			}
+		}
+		meta, err := g.cat.Track(g.ctx, id)
 		if err != nil {
-			slog.Debug("track metadata lookup failed", "track_id", rawID, "err", err)
-			return
+			slog.Debug("track metadata lookup failed", "track_id", id, "err", err)
+		} else {
+			if meta.ID == "" {
+				meta.ID = id
+			}
+			g.ctrl.Send(playback.UpdateTrack{Track: meta})
 		}
-		if meta.ID == "" {
-			meta.ID = rawID
-		}
-		g.ctrl.Send(playback.UpdateTrack{Track: meta})
 		select {
-		case g.enrichResults <- meta:
+		case g.enrichResults <- enrichFetchResult{videoID: id, track: meta, err: err}:
 		case <-g.ctx.Done():
 		}
-	}(tr.ID)
+	}(vid)
 }
 
 func (g *Game) requestVisibleArtwork() {
@@ -275,6 +373,14 @@ func (g *Game) requestArtwork(tr model.Track) {
 	g.wg.Add(1)
 	go func(id, rawURL string) {
 		defer g.wg.Done()
+		if g.sem != nil {
+			select {
+			case g.sem <- struct{}{}:
+				defer func() { <-g.sem }()
+			case <-g.ctx.Done():
+				return
+			}
+		}
 		b, err := g.art.Get(g.ctx, id, rawURL)
 		select {
 		case g.artResults <- artFetchResult{videoID: id, url: rawURL, bundle: b, err: err}:
@@ -400,6 +506,9 @@ func (g *Game) onBrowserClick(id string) bool {
 		return true
 	case WidgetNowPlayingArt:
 		g.showArtModal = !g.showArtModal
+		if g.showArtModal {
+			g.ensureNowPlayingTexture(g.snap.Track)
+		}
 		return true
 	case WidgetBrowserPlay:
 		if g.selectedResult >= 0 && g.selectedResult < len(g.results) {

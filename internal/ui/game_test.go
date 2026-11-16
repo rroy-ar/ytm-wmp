@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -279,12 +280,24 @@ func TestBrowserPlaylistURLImport(t *testing.T) {
 	g.submitSearch()
 
 	waitGameCondition(t, g, func() bool {
-		return len(g.results) == 2 && len(ctrl.sentCommands()) == 1
+		return len(g.results) == 2
 	})
 
-	sq, ok := ctrl.sentCommands()[0].(playback.SetQueue)
-	if !ok || len(sq.Tracks) != 2 || sq.Index != 0 || sq.AutoPlay {
-		t.Fatalf("playlist import cmd = %#v, want SetQueue(2 tracks, index 0, AutoPlay=false)", ctrl.sentCommands()[0])
+	if cmds := ctrl.sentCommands(); len(cmds) != 0 {
+		t.Fatalf("searching playlist URL must not clobber queue, got commands: %#v", cmds)
+	}
+	if !strings.Contains(g.searchStatus, "Playlist: 2 tracks") {
+		t.Fatalf("searchStatus = %q, want playlist summary", g.searchStatus)
+	}
+
+	g.onClick(WidgetBrowserImportAll)
+	cmds := ctrl.sentCommands()
+	if len(cmds) != 1 {
+		t.Fatalf("len(cmds) = %d, want 1", len(cmds))
+	}
+	sq, ok := cmds[0].(playback.SetQueue)
+	if !ok || len(sq.Tracks) != 2 || sq.Index != 0 || !sq.AutoPlay {
+		t.Fatalf("playlist import cmd = %#v, want SetQueue(2 tracks, index 0, AutoPlay=true)", cmds[0])
 	}
 }
 
@@ -331,15 +344,147 @@ func TestMetadataEnrichmentAndArtworkUploadAndDraw(t *testing.T) {
 		return false
 	})
 
+	tex := g.artTex["0wRYvsfhsR8"]
+	if tex.list == nil {
+		t.Fatal("expected list thumbnail texture to be uploaded eagerly")
+	}
+	if tex.nowPlaying != nil {
+		t.Fatal("expected 300x300 nowPlaying texture to remain lazy before modal opens")
+	}
+
 	screen := ebiten.NewImage(WindowWidth, WindowHeight)
 	g.Draw(screen)
 
-	// Toggle now-playing artwork modal and draw placeholder fallback for missing art.
+	// Toggle now-playing artwork modal; Update/click uploads the 300x300 texture.
 	g.onClick(WidgetNowPlayingArt)
 	if !g.showArtModal {
 		t.Fatal("showArtModal should toggle true")
 	}
+	if g.artTex["0wRYvsfhsR8"].nowPlaying == nil {
+		t.Fatal("expected 300x300 nowPlaying texture to upload when modal opens")
+	}
 	g.Draw(screen)
+}
+
+func TestQueueEnrichmentAndRetryOnFailure(t *testing.T) {
+	ctrl := newFakeController()
+	cat := newFakeCatalog()
+	var failFirst atomic.Bool
+	failFirst.Store(true)
+	cat.trackFn = func(_ context.Context, id string) (model.Track, error) {
+		if id == "track-id-01" && failFirst.Load() {
+			return model.Track{}, fmt.Errorf("transient error")
+		}
+		return model.Track{
+			ID:           id,
+			Title:        "Title " + id,
+			Artist:       "Artist",
+			Duration:     180 * time.Second,
+			ThumbnailURL: "https://thumb.example/" + id + ".jpg",
+		}, nil
+	}
+
+	g := NewGame(context.Background(), nil, ctrl, &fakeAudioLifecycle{}, WithCatalog(cat))
+	defer g.Close()
+
+	ctrl.setSnapshot(playback.Snapshot{
+		State: playback.StateIdle,
+		Queue: []model.Track{
+			{ID: "track-id-01"},
+			{ID: "track-id-02"},
+		},
+		Index: 0,
+	})
+
+	waitGameCondition(t, g, func() bool {
+		return g.enriched["track-id-02"] && len(g.enrichPending) == 0 && !g.enrichFailed["track-id-01"].IsZero()
+	})
+	if g.enriched["track-id-01"] {
+		t.Fatal("failed enrichment must not be marked enriched")
+	}
+
+	// Allow track-id-01 to succeed and emit QueueChanged to trigger retry.
+	failFirst.Store(false)
+	ctrl.events <- playback.QueueChanged{Len: 2, Index: 0}
+
+	waitGameCondition(t, g, func() bool {
+		return g.enriched["track-id-01"]
+	})
+}
+
+func TestWorkerConcurrencyBounded(t *testing.T) {
+	ctrl := newFakeController()
+	cat := newFakeCatalog()
+
+	var current atomic.Int32
+	var maxSeen atomic.Int32
+	release := make(chan struct{})
+	started := make(chan struct{}, 8)
+
+	cat.trackFn = func(ctx context.Context, id string) (model.Track, error) {
+		n := current.Add(1)
+		for {
+			prev := maxSeen.Load()
+			if n <= prev || maxSeen.CompareAndSwap(prev, n) {
+				break
+			}
+		}
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			current.Add(-1)
+			return model.Track{}, ctx.Err()
+		}
+		current.Add(-1)
+		return model.Track{
+			ID:           id,
+			Title:        "Title " + id,
+			Duration:     60 * time.Second,
+			ThumbnailURL: "https://thumb.example/" + id + ".jpg",
+		}, nil
+	}
+
+	g := NewGame(context.Background(), nil, ctrl, &fakeAudioLifecycle{}, WithCatalog(cat))
+	defer g.Close()
+
+	queue := make([]model.Track, 8)
+	for i := range queue {
+		queue[i] = model.Track{ID: fmt.Sprintf("track-%02d", i)}
+	}
+	ctrl.setSnapshot(playback.Snapshot{
+		State: playback.StateIdle,
+		Queue: queue,
+		Index: 0,
+	})
+
+	if err := g.Update(); err != nil {
+		t.Fatalf("Update = %v", err)
+	}
+	for i := 0; i < maxBrowserWorkers; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %d concurrent workers", maxBrowserWorkers)
+		}
+	}
+	time.Sleep(15 * time.Millisecond)
+	if got := maxSeen.Load(); got > maxBrowserWorkers {
+		t.Fatalf("max concurrent workers = %d, want <= %d", got, maxBrowserWorkers)
+	}
+	close(release)
+
+	waitGameCondition(t, g, func() bool {
+		for _, tr := range queue {
+			if !g.enriched[tr.ID] {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 func waitGameCondition(t *testing.T, g *Game, cond func() bool) {

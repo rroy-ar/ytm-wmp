@@ -44,7 +44,12 @@ Guidelines for coding agents working in `ytm-wmp`.
 
 ## Workflow Expectations
 
-1. **Commit early and often**: break changes into small, logical, passing commits as each piece lands rather than accumulating giant diffs. Use concise conventional commit messages (e.g., `feat(skin): ...`, `fix(audio): ...`, `test(ui): ...`, `docs(plan): ...`).
+> **IMPORTANT — COMMIT EARLY AND OFTEN:** Do **not** save up a giant uncommitted diff until the end of a task. As soon as each small, logical, passing unit of work is complete (and verified), commit it right away before moving on to the next piece.
+
+1. **Commit early and often (mandatory)**:
+   - Break work into small, logical, passing commits as each piece lands—never accumulate large multi-step diffs across unrelated changes.
+   - Run the verification checks below and commit immediately after each cohesive change (implementation + its tests, or doc update).
+   - Use concise conventional commit messages (e.g., `feat(skin): ...`, `fix(audio): ...`, `test(ui): ...`, `docs(plan): ...`).
 2. **Update docs whenever work is done**:
    - After completing a feature, flag, phase, or architectural shift, update `docs/plan/winamp-ytm-player.md` (status summary, package layout, phase outcome, and commit trail) and `README.md` (flags, controls, layout, done/next status).
    - Add or update an ADR in `docs/adr/` when changing concurrency, audio, rendering, or persistence architecture.

@@ -34,16 +34,27 @@ and the full classic playlist/EQ skin system come in Phases 4-5.
   atomic disk cache, in-memory LRU, placeholder), `cmd/ytmctl` debug CLI,
   `playback.UpdateTrack` background enrichment, and the integrated browser
   panel with `-query` / `-playlist` flags.
+- **Phase 3.5 — Hardening & Cleanup**: centralized YouTube ID helpers
+  (`VideoID`, `IsVideoID`, `NormalizeTrackID`, `DefaultThumbnailURL`) in
+  `internal/model` (decoupling `playback`, `ui`, and `catalog` from `ytdlp`),
+  fixed cold-cache `ytmctl artwork`, bounded stdout/stderr in
+  `internal/ytdlp.ExecRunner`, eliminated per-frame `Snapshot.Queue` cloning,
+  prevented playlist searches from clobbering active playback, added lazy
+  `300x300` GPU texture uploads with `Deallocate()`, bounded background
+  enrichment/artwork workers, and extracted `browserPanel` + layout bounds.
 
 ### What's next
 
-- **Phase 3B (optional)**: YouTube Music InnerTube `WEB_REMIX` catalog backend
-  in `internal/catalog/ytmusic` (keeping `yt-dlp` for stream resolution).
+- **Phase 3B (next)**: pure-Go YouTube Music InnerTube `WEB_REMIX` catalog
+  backend in `internal/catalog/ytmusic` (`search`, `next`, `browse`) with a
+  `-catalog ytmusic|ytdlp` flag in `cmd/ytm-wmp` and `cmd/ytmctl` (keeping
+  `yt-dlp` for stream resolution).
 - **Phase 4 — Classic Skin System**: complete Webamp sprite table, bitmap
   `text.bmp`/`numbers.bmp` rendering, position/volume/balance sliders,
-  shuffle/repeat/EQ/PL toggles, `pledit.txt`/`viscolor.txt`, internal draggable
-  window manager, skinned playlist (`pledit.bmp`) and equalizer (`eqmain.bmp`)
-  windows, and skin loader fuzzing.
+  shuffle/repeat/EQ/PL toggles, `pledit.txt`/`viscolor.txt`, docked/stacked
+  Winamp rack (`Main 275x116`, toggleable `EQ 275x116`, toggleable
+  `Playlist/Browser 275x232`), skinned playlist (`pledit.bmp`) and equalizer
+  (`eqmain.bmp`) windows, and skin loader fuzzing.
 - **Phase 5 — Full Player UX & Persistence**: versioned atomic JSON persistence
   for skin, volume, queue, and window positions; M3U import/export; error
   toasts; and settings UI.
@@ -145,8 +156,8 @@ Layout:
 |------|----------------|
 | `cmd/ytm-wmp` | flags, dependency checks, wiring, signals |
 | `cmd/ytmctl` | catalog search, track, playlist, and artwork debug CLI |
-| `internal/model` | shared domain types (`Track`, `StreamInfo`) |
-| `internal/ytdlp` | yt-dlp stream resolver, video ID normalization, URL cache |
+| `internal/model` | shared domain types (`Track`, `StreamInfo`) and YouTube ID helpers |
+| `internal/ytdlp` | yt-dlp `-g` stream resolver with bounded output and 5-hour URL cache |
 | `internal/catalog` | `Catalog` interface, target classification, debounced `Searcher` |
 | `internal/catalog/ytdlp` | `yt-dlp -J` catalog implementation and in-memory caches |
 | `internal/artwork` | thumbnail fetch, JPEG/PNG/WebP decode, resize, disk + LRU cache |
@@ -154,11 +165,11 @@ Layout:
 | `internal/playback` | actor controller, queue, state machine, error taxonomy |
 | `internal/deps` | external tool discovery and versions |
 | `internal/skin` | pure `.wsz`/`.zip`/directory loader and sprite table |
-| `internal/ui` | game loop, immediate-mode input, layout, catalog browser |
+| `internal/ui` | game loop, immediate-mode input, layout, `browserPanel` |
 | `internal/ui/skinview` | one-time GPU upload and sprite cache |
 | `assets/dev-skin` | original loose-BMP development skin |
 | `docs/plan` | delivery plan |
-| `docs/adr` | architecture decisions |
+| `docs/adr` | architecture decisions (`0001` audio, `0002` window model, `0003` actor & catalog split) |
 | `AGENTS.md` | repository guide and workflow rules for agents |
 
 ## House rules

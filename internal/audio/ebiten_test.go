@@ -484,3 +484,75 @@ func (s *sinkSource) finish() {
 func (s *sinkSource) closeCount() int {
 	return int(s.closes.Load())
 }
+
+type pcmSinkSource struct {
+	*sinkSource
+	data []byte
+}
+
+func (s *pcmSinkSource) Read(p []byte) (int, error) {
+	if len(s.data) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, s.data)
+	s.data = s.data[n:]
+	return n, nil
+}
+
+func TestEbitenSinkEQAndVisTap(t *testing.T) {
+	pcm := makeSinePCM(1000, 128, 0.25)
+	src := &pcmSinkSource{
+		sinkSource: newSinkSource(),
+		data:       append([]byte(nil), pcm...),
+	}
+	player := newFakePlayer(&recorder{})
+	var readOut []byte
+
+	sink := newEbitenSink(func(r io.Reader) (pcmPlayer, error) {
+		var err error
+		readOut, err = io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		return player, nil
+	})
+	sink.SetEQ(EQSettings{Enabled: true, PreampDB: 6})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- sink.Play(ctx, src)
+	}()
+
+	waitForPublishedPlayer(t, sink)
+
+	if len(readOut) != len(pcm) {
+		t.Fatalf("readOut len = %d, want %d", len(readOut), len(pcm))
+	}
+	// Preamp +6 dB should double amplitude (~2x RMS).
+	gain := pcmRMS(readOut) / pcmRMS(pcm)
+	if gain < 1.8 || gain > 2.2 {
+		t.Fatalf("expected ~2x preamp gain, got %.2f", gain)
+	}
+
+	vis := make([]float32, 128)
+	n := sink.ReadVisSamples(vis)
+	if n != 128 {
+		t.Fatalf("ReadVisSamples = %d, want 128", n)
+	}
+
+	// Updating EQ live on an active sink updates EQ() and active EQReader.
+	sink.SetEQ(EQSettings{Enabled: false})
+	if sink.EQ().Enabled {
+		t.Fatalf("expected EQ().Enabled == false")
+	}
+
+	src.finish()
+	if err := <-done; err != nil {
+		t.Fatalf("Play returned error: %v", err)
+	}
+	if n := sink.ReadVisSamples(vis); n != 0 {
+		t.Fatalf("expected visRing reset after teardown, got %d samples", n)
+	}
+}

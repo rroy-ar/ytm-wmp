@@ -45,6 +45,9 @@ type EbitenSink struct {
 	mu           sync.Mutex
 	player       pcmPlayer
 	src          Source
+	eqReader     *EQReader
+	eqSettings   EQSettings
+	visRing      *VisRing
 	pausePending bool
 	volumeSet    bool
 	volume       float64
@@ -58,12 +61,21 @@ type EbitenSink struct {
 // Ebitengine game has started; it creates the process-wide 48 kHz context on
 // the first Update tick.
 func NewEbitenSink() *EbitenSink {
-	return &EbitenSink{volumeSet: true, volume: 1}
+	return &EbitenSink{
+		volumeSet: true,
+		volume:    1,
+		visRing:   NewVisRing(VisRingCapacity),
+	}
 }
 
 // newEbitenSink injects a player factory for tests.
 func newEbitenSink(factory playerFactory) *EbitenSink {
-	s := &EbitenSink{factory: factory, volumeSet: true, volume: 1}
+	s := &EbitenSink{
+		factory:   factory,
+		volumeSet: true,
+		volume:    1,
+		visRing:   NewVisRing(VisRingCapacity),
+	}
 	if factory != nil {
 		// Mark initialization done so tests that call Play directly do not
 		// create a real audio device.
@@ -114,12 +126,22 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	factory := s.factory
 	startPaused := s.pausePending
 	s.pausePending = false
+	eqSettings := s.eqSettings
+	vis := s.visRing
+	if vis == nil {
+		vis = NewVisRing(VisRingCapacity)
+		s.visRing = vis
+	}
 	s.mu.Unlock()
 	if factory == nil {
 		return errors.New("audio context is not initialized")
 	}
 
-	player, err := factory(src)
+	vis.Reset()
+	eqReader := NewEQReader(src, eqSettings)
+	tap := NewVisTapReader(eqReader, vis)
+
+	player, err := factory(tap)
 	if err != nil {
 		return fmt.Errorf("creating audio player: %w", err)
 	}
@@ -130,6 +152,7 @@ func (s *EbitenSink) Play(ctx context.Context, src Source) error {
 	s.mu.Lock()
 	s.player = player
 	s.src = src
+	s.eqReader = eqReader
 	s.lastPos = 0
 	vol := 1.0
 	if s.volumeSet {
@@ -258,6 +281,36 @@ func (s *EbitenSink) Resume() {
 	}
 }
 
+// SetEQ updates the equalizer settings for the active stream and future streams.
+func (s *EbitenSink) SetEQ(settings EQSettings) {
+	s.mu.Lock()
+	s.eqSettings = settings
+	eq := s.eqReader
+	s.mu.Unlock()
+
+	if eq != nil {
+		eq.SetEQ(settings)
+	}
+}
+
+// EQ returns the current equalizer settings.
+func (s *EbitenSink) EQ() EQSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.eqSettings
+}
+
+// ReadVisSamples copies up to len(dst) recent mono PCM samples for visualization.
+func (s *EbitenSink) ReadVisSamples(dst []float32) int {
+	s.mu.Lock()
+	vis := s.visRing
+	s.mu.Unlock()
+	if vis == nil {
+		return 0
+	}
+	return vis.Latest(dst)
+}
+
 // Close stops the current player and releases ffmpeg. It is safe to call more
 // than once and while Play is unwinding.
 func (s *EbitenSink) Close() {
@@ -266,10 +319,14 @@ func (s *EbitenSink) Close() {
 	src := s.src
 	s.player = nil
 	s.src = nil
+	s.eqReader = nil
+	vis := s.visRing
 	s.mu.Unlock()
 
 	if player != nil {
 		s.teardown(player, src)
+	} else if vis != nil {
+		vis.Reset()
 	}
 }
 
@@ -288,7 +345,11 @@ func (s *EbitenSink) teardown(player pcmPlayer, src Source) {
 		s.lastPos = pos
 		s.player = nil
 		s.src = nil
+		s.eqReader = nil
 		s.pausePending = false
+		if s.visRing != nil {
+			s.visRing.Reset()
+		}
 	}
 	s.mu.Unlock()
 }

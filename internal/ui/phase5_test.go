@@ -126,9 +126,60 @@ func TestBrowserTabsDetailDrillDownAndBackStack(t *testing.T) {
 	if len(g.detailStack) != 1 || g.detailStack[0].detail.Collection.ID != "UC_daft" {
 		t.Fatalf("after first back, detailStack len=%d", len(g.detailStack))
 	}
+	// Queue album directly from artist's Albums list without opening it.
+	g.onClick(WidgetBrowserQueue)
+	waitGameCondition(t, g, func() bool {
+		return len(ctrl.sentCommands()) == 1
+	})
+	if len(g.detailStack) != 1 {
+		t.Fatalf("queueing album from artist detail should not push detailStack, len=%d", len(g.detailStack))
+	}
+
 	g.onClick(WidgetDetailBack)
 	if len(g.detailStack) != 0 || len(g.collections) != 1 {
 		t.Fatalf("after second back, detailStack len=%d collections=%d", len(g.detailStack), len(g.collections))
+	}
+}
+
+func TestBrowserQueueAlbumFromSearchResults(t *testing.T) {
+	ctrl := newFakeController()
+	cat := &fakeUITabCatalog{
+		collections: map[catalog.SearchTab][]catalog.Collection{
+			catalog.TabAlbums: {{ID: "MPREb_disc", Title: "Discovery", Kind: catalog.CollectionAlbum}},
+		},
+		details: map[string]catalog.CollectionDetail{
+			"MPREb_disc": {
+				Collection: catalog.Collection{ID: "MPREb_disc", Title: "Discovery", Kind: catalog.CollectionAlbum},
+				Tracks: []model.Track{
+					{ID: "0wRYvsfhsR8", Title: "Something About Us"},
+					{ID: "FGBhQbmPwH8", Title: "One More Time"},
+				},
+			},
+		},
+	}
+
+	g := NewGame(context.Background(), nil, ctrl, &fakeAudioLifecycle{}, WithCatalog(cat), WithSearchDebounce(0))
+	defer g.Close()
+
+	g.focusSearch()
+	g.onClick(WidgetBrowserTabAlbums)
+	g.typeSearchText("discovery")
+	g.submitSearch()
+	waitGameCondition(t, g, func() bool {
+		return len(g.collections) == 1
+	})
+
+	g.onClick(WidgetBrowserQueue)
+	waitGameCondition(t, g, func() bool {
+		return len(ctrl.sentCommands()) == 1
+	})
+
+	if len(g.detailStack) != 0 {
+		t.Fatalf("queueing album from search results should not open detailStack, len=%d", len(g.detailStack))
+	}
+	enq, ok := ctrl.sentCommands()[0].(playback.Enqueue)
+	if !ok || len(enq.Tracks) != 2 || enq.Tracks[0].ID != "0wRYvsfhsR8" || enq.Tracks[1].ID != "FGBhQbmPwH8" {
+		t.Fatalf("album Enqueue = %#v", ctrl.sentCommands()[0])
 	}
 }
 

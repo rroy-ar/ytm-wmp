@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -92,6 +93,12 @@ type enrichFetchResult struct {
 	err     error
 }
 
+type collectionQueueResult struct {
+	col    catalog.Collection
+	tracks []model.Track
+	err    error
+}
+
 type browserPanel struct {
 	searcher          *catalog.Searcher
 	clipboard         ClipboardFunc
@@ -119,18 +126,19 @@ type browserPanel struct {
 
 	showArtModal bool
 
-	artPlaceholder *ebiten.Image
-	artResults     chan artFetchResult
-	enrichResults  chan enrichFetchResult
-	artTex         map[string]artTextures
-	artOrder       []string
-	artPending     map[string]bool
-	artFailed      map[string]string
-	knownThumbURL  map[string]string
-	enriched       map[string]bool
-	enrichPending  map[string]bool
-	enrichFailed   map[string]time.Time
-	sem            chan struct{}
+	artPlaceholder  *ebiten.Image
+	artResults      chan artFetchResult
+	enrichResults   chan enrichFetchResult
+	queueColResults chan collectionQueueResult
+	artTex          map[string]artTextures
+	artOrder        []string
+	artPending      map[string]bool
+	artFailed       map[string]string
+	knownThumbURL   map[string]string
+	enriched        map[string]bool
+	enrichPending   map[string]bool
+	enrichFailed    map[string]time.Time
+	sem             chan struct{}
 }
 
 func (g *Game) initBrowser() {
@@ -141,6 +149,7 @@ func (g *Game) initBrowser() {
 	g.searchField.SetText(g.searchQuery)
 	g.artResults = make(chan artFetchResult, 32)
 	g.enrichResults = make(chan enrichFetchResult, 32)
+	g.queueColResults = make(chan collectionQueueResult, 8)
 	g.sem = make(chan struct{}, maxBrowserWorkers)
 	g.artTex = make(map[string]artTextures)
 	g.artPending = make(map[string]bool)
@@ -209,6 +218,7 @@ func (g *Game) updateBrowser() {
 	}
 
 	g.drainSearchResults()
+	g.drainQueueCollectionResults()
 	g.drainEnrichments()
 
 	if g.snap.Track.ID != "" {
@@ -1047,13 +1057,58 @@ func (g *Game) onBrowserPrimaryAction() {
 	}
 }
 
+func (g *Game) drainQueueCollectionResults() {
+	for {
+		select {
+		case res := <-g.queueColResults:
+			if res.err != nil {
+				g.searchStatus = fmt.Sprintf("Err: %v", res.err)
+				continue
+			}
+			if len(res.tracks) == 0 {
+				g.searchStatus = "No tracks in " + truncateRunes(res.col.Title, 14)
+				continue
+			}
+			if g.ctrl != nil {
+				g.ctrl.Send(playback.Enqueue{Tracks: res.tracks})
+				g.searchStatus = fmt.Sprintf("Queued %d: %s", len(res.tracks), truncateRunes(res.col.Title, 12))
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (g *Game) queueCollection(col catalog.Collection) {
+	tc, ok := g.cat.(catalog.TabCatalog)
+	if !ok || col.ID == "" {
+		return
+	}
+	g.searchStatus = "Queuing " + truncateRunes(col.Title, 16) + "..."
+	go func() {
+		ctx, cancel := context.WithTimeout(g.ctx, 15*time.Second)
+		defer cancel()
+		detail, err := tc.BrowseCollection(ctx, col)
+		select {
+		case g.queueColResults <- collectionQueueResult{col: col, tracks: detail.Tracks, err: err}:
+		case <-g.ctx.Done():
+		}
+	}()
+}
+
 func (g *Game) onBrowserQueueAction() {
 	if g.ctrl == nil {
 		return
 	}
 	if len(g.detailStack) > 0 {
 		cur := &g.detailStack[len(g.detailStack)-1]
-		if !cur.showAlbums && cur.selected >= 0 && cur.selected < len(cur.detail.Tracks) {
+		if cur.showAlbums {
+			if cur.selected >= 0 && cur.selected < len(cur.detail.Albums) {
+				g.queueCollection(cur.detail.Albums[cur.selected])
+			}
+			return
+		}
+		if cur.selected >= 0 && cur.selected < len(cur.detail.Tracks) {
 			tr := cur.detail.Tracks[cur.selected]
 			g.ctrl.Send(playback.Enqueue{Tracks: []model.Track{tr}})
 			g.searchStatus = "Queued: " + truncateRunes(trackDisplayTitle(tr), 18)
@@ -1066,7 +1121,13 @@ func (g *Game) onBrowserQueueAction() {
 		}
 		return
 	}
-	if len(g.collections) == 0 && g.selectedResult >= 0 && g.selectedResult < len(g.results) {
+	if len(g.collections) > 0 {
+		if g.selectedResult >= 0 && g.selectedResult < len(g.collections) {
+			g.queueCollection(g.collections[g.selectedResult])
+		}
+		return
+	}
+	if g.selectedResult >= 0 && g.selectedResult < len(g.results) {
 		tr := g.results[g.selectedResult]
 		g.ctrl.Send(playback.Enqueue{Tracks: []model.Track{tr}})
 		g.searchStatus = "Queued: " + truncateRunes(trackDisplayTitle(tr), 18)

@@ -73,6 +73,32 @@ func TestSourceKillsOnExplicitClose(t *testing.T) {
 	}
 }
 
+func TestSourceReadReturnsEOFOnClose(t *testing.T) {
+	src := openScript(t, "exec sleep 60\n")
+
+	errCh := make(chan error, 1)
+	go func() {
+		buf := make([]byte, FrameSize)
+		_, err := src.Read(buf)
+		errCh <- err
+	}()
+
+	// Close unblocks the in-flight Read; it must return io.EOF rather than
+	// os.ErrClosed so ebiten/oto does not treat teardown as a fatal audio error.
+	_ = src.Close()
+
+	if err := <-errCh; !errors.Is(err, io.EOF) {
+		t.Fatalf("blocked Read after Close = %v, want io.EOF", err)
+	}
+	// A subsequent Read on the closed source must also return io.EOF.
+	if _, err := src.Read(make([]byte, FrameSize)); !errors.Is(err, io.EOF) {
+		t.Fatalf("subsequent Read after Close = %v, want io.EOF", err)
+	}
+	if src.Err() != nil {
+		t.Fatalf("src.Err() = %v, want nil", src.Err())
+	}
+}
+
 func openScript(t *testing.T, body string) Source {
 	t.Helper()
 	if runtime.GOOS == "windows" {

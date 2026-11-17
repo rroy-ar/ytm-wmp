@@ -154,8 +154,12 @@ func (s *ffmpegSource) Read(p []byte) (int, error) {
 		s.doneOnce.Do(func() { close(s.done) })
 
 		// A closed pipe is how teardown unblocks a reader. It is not a
-		// playback failure.
-		if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrClosed) {
+		// playback failure, and returning os.ErrClosed to ebiten/oto would
+		// surface as a fatal audio context error from RunGame.
+		if errors.Is(err, os.ErrClosed) {
+			return n, io.EOF
+		}
+		if !errors.Is(err, io.EOF) {
 			s.errMu.Lock()
 			if s.readErr == nil {
 				s.readErr = err

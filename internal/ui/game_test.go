@@ -273,9 +273,9 @@ func TestBrowserResultSelectionPlayQueueAndImportAll(t *testing.T) {
 	if !ok || sq2.Index != 0 || !sq2.AutoPlay || len(sq2.Tracks) != 1 || sq2.Tracks[0].ID != "id-1" {
 		t.Fatalf("cmd[2] = %#v, want SetQueue single track id-1 AutoPlay", cmds[2])
 	}
-	sq3, ok := cmds[3].(playback.SetQueue)
-	if !ok || sq3.Index != 0 || !sq3.AutoPlay || len(sq3.Tracks) != 3 {
-		t.Fatalf("cmd[3] = %#v, want SetQueue index 0 AutoPlay", cmds[3])
+	enq3, ok := cmds[3].(playback.Enqueue)
+	if !ok || len(enq3.Tracks) != 3 {
+		t.Fatalf("cmd[3] = %#v, want Enqueue(3 tracks)", cmds[3])
 	}
 }
 
@@ -317,9 +317,9 @@ func TestBrowserPlaylistURLImport(t *testing.T) {
 	if len(cmds) != 1 {
 		t.Fatalf("len(cmds) = %d, want 1", len(cmds))
 	}
-	sq, ok := cmds[0].(playback.SetQueue)
-	if !ok || len(sq.Tracks) != 2 || sq.Index != 0 || !sq.AutoPlay {
-		t.Fatalf("playlist import cmd = %#v, want SetQueue(2 tracks, index 0, AutoPlay=true)", cmds[0])
+	enq, ok := cmds[0].(playback.Enqueue)
+	if !ok || len(enq.Tracks) != 2 {
+		t.Fatalf("playlist import cmd = %#v, want Enqueue(2 tracks)", cmds[0])
 	}
 }
 

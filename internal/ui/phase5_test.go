@@ -114,11 +114,11 @@ func TestBrowserTabsDetailDrillDownAndBackStack(t *testing.T) {
 	g.onClick(WidgetBrowserImportAll)
 	cmds := ctrl.sentCommands()
 	if len(cmds) != 1 {
-		t.Fatalf("cmds = %#v, want 1 SetQueue", cmds)
+		t.Fatalf("cmds = %#v, want 1 Enqueue", cmds)
 	}
-	sq, ok := cmds[0].(playback.SetQueue)
-	if !ok || len(sq.Tracks) != 2 || sq.Tracks[0].ID != "0wRYvsfhsR8" {
-		t.Fatalf("album SetQueue = %#v", cmds[0])
+	enq, ok := cmds[0].(playback.Enqueue)
+	if !ok || len(enq.Tracks) != 2 || enq.Tracks[0].ID != "0wRYvsfhsR8" {
+		t.Fatalf("album Enqueue = %#v", cmds[0])
 	}
 
 	// <BACK pops album -> artist -> search results.

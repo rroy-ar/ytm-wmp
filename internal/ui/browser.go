@@ -1077,20 +1077,18 @@ func (g *Game) onBrowserImportAllAction() {
 	if g.ctrl == nil {
 		return
 	}
+	var tracks []model.Track
 	if len(g.detailStack) > 0 {
-		cur := &g.detailStack[len(g.detailStack)-1]
-		if len(cur.detail.Tracks) > 0 {
-			g.ctrl.Send(playback.SetQueue{Tracks: cur.detail.Tracks, Index: 0, AutoPlay: true})
-			g.errText = ""
-			g.searchStatus = fmt.Sprintf("Playing %d tracks", len(cur.detail.Tracks))
-		}
+		tracks = g.detailStack[len(g.detailStack)-1].detail.Tracks
+	} else {
+		tracks = g.results
+	}
+	if len(tracks) == 0 {
 		return
 	}
-	if len(g.results) > 0 {
-		g.ctrl.Send(playback.SetQueue{Tracks: g.results, Index: 0, AutoPlay: true})
-		g.errText = ""
-		g.searchStatus = fmt.Sprintf("Playing %d tracks", len(g.results))
-	}
+	g.ctrl.Send(playback.Enqueue{Tracks: tracks})
+	g.errText = ""
+	g.searchStatus = fmt.Sprintf("Queued %d tracks", len(tracks))
 }
 
 func (g *Game) playTrack(tr model.Track) {

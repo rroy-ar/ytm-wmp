@@ -1,12 +1,12 @@
 # Plan: from the PoC to a full YouTube Music player with classic `.wsz` skins
 
 Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, 4
-(complete classic skin system), and 5 (full player UX and persistence) are
-complete; Phase 6 (optional fidelity chunks) and Phase 7 (hardening and v0.1
-release) remain. This document is the single source of truth for architecture,
-status, and upcoming milestones.
+(complete classic skin system), 5 (full player UX and persistence), 6A (EQ DSP),
+and 6B (spectrum/oscilloscope visualizer) are complete; Phase 6C–6E (optional
+fidelity chunks) and Phase 7 (hardening and v0.1 release) remain. This document
+is the single source of truth for architecture, status, and upcoming milestones.
 
-Last updated: 2026-11-16.
+Last updated: 2026-11-17.
 
 ## 1. Where the project is today
 
@@ -980,10 +980,16 @@ writes, schema migration.
 
 ### Phase 6 — Fidelity chunks (optional, independently shippable)
 
-- 6A EQ DSP: 10 biquads + preamp as an `io.Reader` between ffmpeg and the
-  player; float32; bypass; clipping.
-- 6B Spectrum/oscilloscope: tee PCM into a ring buffer, Hann window, FFT,
-  `viscolor.txt`.
+- **6A EQ DSP (Complete):** 10-band peaking biquads (`60`–`16000` Hz) + preamp
+  (`[-12, +12]` dB) as `audio.EQReader` between `ffmpeg` and Ebitengine's audio
+  player, with float32 processing, bypass mode, hard clipping to `[-1, 1]`, and
+  live UI wiring from `internal/ui/eq.go` via `EbitenSink.SetEQ`.
+- **6B Spectrum/oscilloscope (Complete):** `audio.VisTapReader` tees post-EQ
+  mono PCM into `audio.VisRing`, `audio.ComputeSpectrum` runs a Hann-windowed
+  1024-point radix-2 FFT into 19 log-spaced bars, and `internal/ui/vis.go`
+  renders spectrum bars (with falling peaks) and oscilloscope waveforms at
+  `(24, 43, 100, 59)` using `viscolor.txt` (click to cycle Spectrum ->
+  Oscilloscope -> Off).
 - 6C Shade/double-size/region masks; point-in-polygon hit testing.
 - 6D Skin browser/cursors; skin folder scanning; `.cur` if cheap.
 - 6E Gapless/MPRIS/media keys; only after the rest is solid.

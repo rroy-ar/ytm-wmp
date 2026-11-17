@@ -72,11 +72,16 @@ error/status toasts with missing-dependency alerts; and an in-app Settings panel
   (`SET` / `F2`) for skin, `1X`/`2X` scale, audio buffer, artwork cache
   stats/prune/clear, and `yt-dlp`/`ffmpeg` path configuration.
 
+- **Phase 6A & 6B — EQ DSP & Visualizer**: added 10-band peaking biquad EQ
+  + preamp (`audio.EQReader`, live-wired from the EQ window with bypass and
+  clipping), and a `viscolor.txt`-styled spectrum analyzer / oscilloscope
+  (`audio.VisRing`, `audio.VisTapReader`, Hann-windowed 1024-pt FFT; click the
+  main-window visualizer box to cycle Spectrum -> Oscilloscope -> Off).
+
 ### What's next
 
-- **Phase 6 (optional) & Phase 7**: EQ DSP, spectrum/oscilloscope visualizer,
-  shade/`region.txt` modes, performance/allocation profiling, multi-skin corpus
-  verification, packaging, and `v0.1` release hardening.
+- **Phase 6C–6E (optional) & Phase 7**: shade/`region.txt` modes, performance/allocation
+  profiling, multi-skin corpus verification, packaging, and `v0.1` release hardening.
 
 See [`docs/plan/winamp-ytm-player.md`](docs/plan/winamp-ytm-player.md) for the
 detailed plan and [`AGENTS.md`](AGENTS.md) for repo conventions.

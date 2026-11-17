@@ -86,7 +86,7 @@ detailed plan and [`AGENTS.md`](AGENTS.md) for repo conventions.
 - Go 1.27+ (matching `go.mod`)
 - [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) on `PATH`
 - [`ffmpeg`](https://ffmpeg.org/download.html) on `PATH`
-- A desktop with X11 and OpenGL for Ebitengine (Linux first)
+- A Linux desktop with X11 and OpenGL for Ebitengine (Windows and macOS are out of scope)
 - On Debian/Ubuntu, the X11 development headers are needed to compile:
 
   ```sh

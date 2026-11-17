@@ -87,7 +87,7 @@ Implemented and covered by tests:
 
 What is still missing:
 
-- Real `.wsz` skin corpus smoke verification and cross-platform CI (Phase 7).
+- Real `.wsz` skin corpus smoke verification and Linux CI (Phase 7).
 - Optional Phase 6 fidelity chunks (EQ DSP, spectrum visualizer, shade/`region.txt`).
 
 Keep the good parts: process cancellation, the stale-URL retry, the PCM pipe,
@@ -106,9 +106,11 @@ This is already a large v1. Do not add to it without cutting something else.
 - [x] Persist skin, volume, queue, playlists, and window positions.
 - [x] Recover from expired URLs, network failures, and missing tools with
       actionable errors.
-- [x] Run on Linux first; keep Windows/macOS buildable.
+- [x] Run on Linux.
 
 Explicitly out of scope for v1:
+
+- Windows and macOS compilation/support (Linux only).
 
 - Modern `.wal` skins (XML + Maki). Detect and reject with a clear message.
 - AVS/MilkDrop, video, minibrowser, CD ripping, device sync.
@@ -998,14 +1000,13 @@ Each chunk must have a visible/audible demo and not regress v1.
   time-to-first-audio measurement.
 - Tests: parser/queue/state unit tests, fake-process integration, corpus smoke,
   `-race`, fuzz skin/BMP.
-- Packaging: Linux binary; Windows/macOS CI on native runners; Windows
-  `-ldflags -H=windowsgui`; desktop entry/icon.
+- Packaging: Linux binary; Linux CI; desktop entry/icon.
 - Docs: README install/troubleshooting, architecture/ADRs, legal note (no
   bundled skins/content; yt-dlp/YouTube ToS).
 - Release: tag v0.1.0, smoke checklist, keep yt-dlp update instructions
   prominent.
 
-**Verify:** v0.1 builds on Linux and one other OS; a clean machine can install
+**Verify:** v0.1 builds on Linux; a clean machine can install
 deps, launch, load a skin, search, and play; 20-skin smoke test passes; known
 limitations documented.
 
@@ -1023,7 +1024,7 @@ limitations documented.
 | Text/Unicode in bitmap skins | Medium | Bitmap chrome + TTF fallback; explicit `?` last resort |
 | One-window limitation | Medium | Decide early; internal windows + snapping; document; transparent-canvas experiment only after v1 |
 | Scope creep (EQ/visualizer/gapless/account) | High | v1 checklist; Phase 6 optional; ship Phase 4/5 first |
-| Cross-compilation/Cgo | Medium | Linux first; native CI for Windows/macOS; document deps |
+| Cgo / X11 & GL build deps | Medium | Linux only (Windows/macOS out of scope); document X11/GL dev deps |
 | Legal/ToS | Medium | No bundled skins/content; personal-use docs; don't log/redistribute streams |
 | External tools in sandboxes | Medium | Startup checks; configurable paths; Flatpak notes |
 
@@ -1176,5 +1177,5 @@ Recent trail as of this update (newest first):
 - `1858514` refactor: land phase 0 architecture seams
 
 Next up is Phase 7 (hardening, multi-skin corpus smoke testing, performance
-profiling, and cross-platform CI for `v0.1`), with optional Phase 6 fidelity
+profiling, and Linux CI for `v0.1`), with optional Phase 6 fidelity
 chunks (EQ DSP, spectrum visualizer, shade/`region.txt`, MPRIS).

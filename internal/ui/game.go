@@ -424,11 +424,18 @@ func (g *Game) Update() error {
 			g.showArtModal = false
 		}
 	}
-	if !g.showArtModal && !g.showSettings && g.browserMode && !g.hidePL &&
-		len(g.detailStack) == 0 && g.activeTab != browserTabQueue &&
-		(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonMiddle) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight)) &&
-		image.Pt(cursorX, cursorY).In(offsetRect(SearchInputBounds, dy)) {
-		g.pasteSearch()
+	if !g.showArtModal && !g.showSettings && g.browserMode && !g.hidePL {
+		pt := image.Pt(cursorX, cursorY)
+		if len(g.detailStack) == 0 && g.activeTab != browserTabQueue &&
+			(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonMiddle) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight)) &&
+			pt.In(offsetRect(SearchInputBounds, dy)) {
+			g.pasteSearch()
+		} else if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) && pt.In(offsetRect(ResultListBounds, dy)) {
+			rowIdx := (cursorY - (ResultListBounds.Min.Y + dy)) / ResultRowHeight
+			if rowIdx >= 0 && rowIdx < len(resultRowWidgets) {
+				g.onBrowserRowRightClick(rowIdx)
+			}
+		}
 	}
 
 	widgets := g.activeWidgets()

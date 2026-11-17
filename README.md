@@ -159,8 +159,9 @@ Controls:
   click/`Ctrl+Click`/`Shift+Click`/double-click to play, scrollbar/wheel,
   `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus including M3U save/load, mini
   transport controls); browser search bar (`PL` toggle, `GO`, `CLR`,
-  middle/right-click search box to paste), result rows, `PLAY`/`QUEUE`/`ALL->Q`/
-  `AUTO` actions, browser tabs (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`)
+  middle/right-click search box to paste), result rows (double left-click
+  to clear queue & play / open collection, right-click to add to queue),
+  `PLAY`/`QUEUE`/`ALL->Q`/`AUTO` actions, browser tabs (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`)
   with playlist/album/artist detail views (`<BACK`), Settings panel (`SET`),
   toast `[X]`/`SETTINGS` buttons, and now-playing artwork preview toggle.
 - Keyboard: `/` focus search (`Left`/`Right`/`Home`/`End`/`Delete`/`Backspace`

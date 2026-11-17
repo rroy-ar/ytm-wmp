@@ -256,9 +256,12 @@ func TestBrowserResultSelectionPlayQueueAndImportAll(t *testing.T) {
 	// Clicking ImportAll replaces queue at index 0.
 	g.onClick(WidgetBrowserImportAll)
 
+	// Right-clicking a result row enqueues it without clearing the queue.
+	g.onBrowserRowRightClick(2)
+
 	cmds := ctrl.sentCommands()
-	if len(cmds) != 4 {
-		t.Fatalf("len(cmds) = %d, want 4 (%#v)", len(cmds), cmds)
+	if len(cmds) != 5 {
+		t.Fatalf("len(cmds) = %d, want 5 (%#v)", len(cmds), cmds)
 	}
 
 	sq0, ok := cmds[0].(playback.SetQueue)
@@ -276,6 +279,10 @@ func TestBrowserResultSelectionPlayQueueAndImportAll(t *testing.T) {
 	enq3, ok := cmds[3].(playback.Enqueue)
 	if !ok || len(enq3.Tracks) != 3 {
 		t.Fatalf("cmd[3] = %#v, want Enqueue(3 tracks)", cmds[3])
+	}
+	enq4, ok := cmds[4].(playback.Enqueue)
+	if !ok || len(enq4.Tracks) != 1 || enq4.Tracks[0].ID != "id-2" {
+		t.Fatalf("cmd[4] = %#v, want Enqueue(id-2)", cmds[4])
 	}
 }
 

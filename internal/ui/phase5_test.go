@@ -181,6 +181,15 @@ func TestBrowserQueueAlbumFromSearchResults(t *testing.T) {
 	if !ok || len(enq.Tracks) != 2 || enq.Tracks[0].ID != "0wRYvsfhsR8" || enq.Tracks[1].ID != "FGBhQbmPwH8" {
 		t.Fatalf("album Enqueue = %#v", ctrl.sentCommands()[0])
 	}
+
+	// Right-clicking an album row also queues it without opening detail view.
+	g.onBrowserRowRightClick(0)
+	waitGameCondition(t, g, func() bool {
+		return len(ctrl.sentCommands()) == 2
+	})
+	if len(g.detailStack) != 0 {
+		t.Fatalf("right-clicking album should not open detailStack, len=%d", len(g.detailStack))
+	}
 }
 
 func TestBrowserTabUnsupportedAlbumsArtistsOnPlainCatalog(t *testing.T) {

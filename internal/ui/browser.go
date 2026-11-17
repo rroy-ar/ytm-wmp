@@ -1023,6 +1023,55 @@ func (g *Game) onBrowserRowClick(rowIdx int) {
 	}
 }
 
+func (g *Game) enqueueTrack(tr model.Track) {
+	if g.ctrl == nil {
+		return
+	}
+	g.ctrl.Send(playback.Enqueue{Tracks: []model.Track{tr}})
+	g.searchStatus = "Queued: " + truncateRunes(trackDisplayTitle(tr), 18)
+}
+
+func (g *Game) onBrowserRowRightClick(rowIdx int) {
+	if g.ctrl == nil {
+		return
+	}
+	if len(g.detailStack) > 0 {
+		cur := &g.detailStack[len(g.detailStack)-1]
+		idx := cur.scroll + rowIdx
+		if cur.showAlbums {
+			if idx >= 0 && idx < len(cur.detail.Albums) {
+				cur.selected = idx
+				g.queueCollection(cur.detail.Albums[idx])
+			}
+			return
+		}
+		if idx >= 0 && idx < len(cur.detail.Tracks) {
+			cur.selected = idx
+			g.enqueueTrack(cur.detail.Tracks[idx])
+		}
+		return
+	}
+
+	if g.activeTab == browserTabQueue {
+		return
+	}
+
+	if len(g.collections) > 0 {
+		idx := g.scrollOffset + rowIdx
+		if idx >= 0 && idx < len(g.collections) {
+			g.selectedResult = idx
+			g.queueCollection(g.collections[idx])
+		}
+		return
+	}
+
+	idx := g.scrollOffset + rowIdx
+	if idx >= 0 && idx < len(g.results) {
+		g.selectedResult = idx
+		g.enqueueTrack(g.results[idx])
+	}
+}
+
 func (g *Game) onBrowserPrimaryAction() {
 	if len(g.detailStack) > 0 {
 		cur := &g.detailStack[len(g.detailStack)-1]
@@ -1109,9 +1158,7 @@ func (g *Game) onBrowserQueueAction() {
 			return
 		}
 		if cur.selected >= 0 && cur.selected < len(cur.detail.Tracks) {
-			tr := cur.detail.Tracks[cur.selected]
-			g.ctrl.Send(playback.Enqueue{Tracks: []model.Track{tr}})
-			g.searchStatus = "Queued: " + truncateRunes(trackDisplayTitle(tr), 18)
+			g.enqueueTrack(cur.detail.Tracks[cur.selected])
 		}
 		return
 	}
@@ -1128,9 +1175,7 @@ func (g *Game) onBrowserQueueAction() {
 		return
 	}
 	if g.selectedResult >= 0 && g.selectedResult < len(g.results) {
-		tr := g.results[g.selectedResult]
-		g.ctrl.Send(playback.Enqueue{Tracks: []model.Track{tr}})
-		g.searchStatus = "Queued: " + truncateRunes(trackDisplayTitle(tr), 18)
+		g.enqueueTrack(g.results[g.selectedResult])
 	}
 }
 
@@ -1357,8 +1402,12 @@ func (g *Game) drawBrowser(screen *ebiten.Image) {
 		if g.activeTab == browserTabSongs {
 			ebitenutil.DebugPrintAt(screen, "Press / or click search box", 16, 206+dy)
 			ebitenutil.DebugPrintAt(screen, "to search YTM (yt: for YouTube)", 16, 222+dy)
+			ebitenutil.DebugPrintAt(screen, "2x left-click: clear queue & play", 16, 246+dy)
+			ebitenutil.DebugPrintAt(screen, "Right-click: add to queue", 16, 262+dy)
 		} else {
 			ebitenutil.DebugPrintAt(screen, "Search above to browse "+string(g.activeTab.catalogTab()), 16, 206+dy)
+			ebitenutil.DebugPrintAt(screen, "2x left-click: open item", 16, 230+dy)
+			ebitenutil.DebugPrintAt(screen, "Right-click: add to queue", 16, 246+dy)
 		}
 	default:
 		g.drawTrackRows(screen, listRect, g.results, g.scrollOffset, g.selectedResult, -1, "")

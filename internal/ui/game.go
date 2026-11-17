@@ -261,6 +261,7 @@ type Game struct {
 	browserPanel
 	playlistPanel
 	eqPanel
+	visState
 	settingsState
 	toastState
 
@@ -457,6 +458,7 @@ func (g *Game) Update() error {
 
 	g.updateSearchIME()
 	g.handleKeys()
+	g.updateVisualizer(g.snap.State == playback.StatePlaying)
 	g.maybeSaveEQ()
 	g.maybeSaveConfig()
 
@@ -601,6 +603,9 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 	// Time display (blinks at ~1Hz when paused).
 	blinkOff := (g.tick/30)%2 == 1
 	drawTimeDisplay(screen, g.view, snap.Position, snap.Duration, snap.State, g.timeRemaining, blinkOff)
+
+	// Spectrum / oscilloscope visualizer.
+	g.drawVisualizer(screen)
 
 	// Marquee text.
 	drawMarquee(screen, g.view, g.textFace, g.marqueeText(snap), g.tick)
@@ -781,6 +786,9 @@ func (g *Game) onClick(id string) {
 	case WidgetMainTime:
 		g.timeRemaining = !g.timeRemaining
 		g.markConfigDirty()
+		return
+	case WidgetMainVis:
+		g.cycleVisMode()
 		return
 	case WidgetMainEQ:
 		g.showEQ = !g.showEQ

@@ -36,6 +36,7 @@ const (
 
 	WidgetMainClose    = "main.close"
 	WidgetMainTime     = "main.time"
+	WidgetMainVis      = "main.vis"
 	WidgetMainVolume   = "main.volume"
 	WidgetMainBalance  = "main.balance"
 	WidgetMainEQ       = "main.eq"
@@ -141,6 +142,7 @@ var (
 	EjectButtonBounds  = image.Rect(136, 89, 158, 105)
 	MainCloseBounds    = image.Rect(264, 3, 273, 12)
 	MainTimeBounds     = image.Rect(39, 26, 98, 39)
+	MainVisBounds      = image.Rect(24, 43, 100, 59)
 	MainMarqueeBounds  = image.Rect(111, 24, 265, 36)
 	MainVolumeBounds   = image.Rect(107, 57, 175, 70)
 	MainBalanceBounds  = image.Rect(177, 57, 215, 70)
@@ -226,6 +228,7 @@ var mainWidgets = []Widget{
 var mainControlWidgets = []Widget{
 	{ID: WidgetMainClose, Bounds: MainCloseBounds},
 	{ID: WidgetMainTime, Bounds: MainTimeBounds},
+	{ID: WidgetMainVis, Bounds: MainVisBounds},
 	{ID: WidgetMainVolume, Bounds: MainVolumeBounds},
 	{ID: WidgetMainBalance, Bounds: MainBalanceBounds},
 	{ID: WidgetMainEQ, Bounds: MainEQToggleBounds},

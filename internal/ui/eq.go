@@ -11,9 +11,14 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"github.com/rroy-ar/ytm-wmp/internal/audio"
 	"github.com/rroy-ar/ytm-wmp/internal/skin"
 	"github.com/rroy-ar/ytm-wmp/internal/store"
 )
+
+type eqSink interface {
+	SetEQ(audio.EQSettings)
+}
 
 type eqPreset struct {
 	Name   string
@@ -60,6 +65,23 @@ func (g *Game) initEQ() {
 	}
 	g.eqDragBand = -1
 	g.loadEQ()
+	g.applyEQ()
+}
+
+func (g *Game) currentEQSettings() audio.EQSettings {
+	var s audio.EQSettings
+	s.Enabled = g.eqOn
+	s.PreampDB = audio.EQSliderToDB(g.eqPreamp)
+	for i, v := range g.eqBands {
+		s.BandsDB[i] = audio.EQSliderToDB(v)
+	}
+	return s
+}
+
+func (g *Game) applyEQ() {
+	if s, ok := g.sink.(eqSink); ok && s != nil {
+		s.SetEQ(g.currentEQSettings())
+	}
 }
 
 func (g *Game) loadEQ() {
@@ -174,12 +196,14 @@ func (g *Game) updateEQDrag(topY, cy int, pressed bool) {
 		if math.Abs(g.eqPreamp-val) > 0.1 {
 			g.eqPreamp = val
 			g.setTransientStatus("EQ PREAMP")
+			g.applyEQ()
 			g.markEQDirty()
 		}
 	} else if g.eqDragBand >= 0 && g.eqDragBand < 10 {
 		if math.Abs(g.eqBands[g.eqDragBand]-val) > 0.1 {
 			g.eqBands[g.eqDragBand] = val
 			g.setTransientStatus("EQ BAND")
+			g.applyEQ()
 			g.markEQDirty()
 		}
 	}
@@ -194,6 +218,7 @@ func (g *Game) onEQClick(id string) bool {
 		return true
 	case WidgetEQOn:
 		g.eqOn = !g.eqOn
+		g.applyEQ()
 		g.markEQDirty()
 		return true
 	case WidgetEQAuto:
@@ -206,24 +231,28 @@ func (g *Game) onEQClick(id string) bool {
 		g.eqPreamp = p.Preamp
 		g.eqBands = p.Bands
 		g.setTransientStatus("EQ: " + p.Name)
+		g.applyEQ()
 		g.markEQDirty()
 		return true
 	case WidgetEQPlus12:
 		for i := range g.eqBands {
 			g.eqBands[i] = 100
 		}
+		g.applyEQ()
 		g.markEQDirty()
 		return true
 	case WidgetEQZero:
 		for i := range g.eqBands {
 			g.eqBands[i] = 50
 		}
+		g.applyEQ()
 		g.markEQDirty()
 		return true
 	case WidgetEQMinus12:
 		for i := range g.eqBands {
 			g.eqBands[i] = 0
 		}
+		g.applyEQ()
 		g.markEQDirty()
 		return true
 	}

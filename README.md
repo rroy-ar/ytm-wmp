@@ -155,7 +155,7 @@ Controls:
   elapsed/remaining), volume/balance/seek bars, `SHUF`/`REP`/`EQ`/`PL` toggles,
   skin picker button (`SK` to the right of `REP`, opens the OS file explorer to
   hot-reload a `.wsz`/`.zip` skin), and close button; EQ window `ON`/`AUTO`/`PRESETS`/`+12dB`/`0dB`/`-12dB` and
-  preamp/10-band sliders; skinned Playlist window (`SEARCH` toggle, row
+  preamp/10-band sliders; skinned Playlist window (row
   click/`Ctrl+Click`/`Shift+Click`/double-click to play, scrollbar/wheel,
   `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus including M3U save/load, mini
   transport controls); browser search bar (`PL` toggle, `GO`, `CLR`,

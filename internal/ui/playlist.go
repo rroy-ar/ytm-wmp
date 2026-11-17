@@ -109,7 +109,6 @@ func (g *Game) setPlaylistStatus(msg string) {
 func playlistWidgetsAt(topY int, activeMenu playlistMenuKind) []Widget {
 	widgets := []Widget{
 		{ID: WidgetPlaylistClose, Bounds: image.Rect(264, topY+3, 273, topY+12)},
-		{ID: WidgetPlaylistModeSearch, Bounds: image.Rect(206, topY+4, 248, topY+16)},
 		{ID: WidgetPlaylistScrollbar, Bounds: image.Rect(255, topY+20, 275, topY+194)},
 		{ID: WidgetPlaylistAdd, Bounds: image.Rect(14, topY+202, 36, topY+220)},
 		{ID: WidgetPlaylistRem, Bounds: image.Rect(43, topY+202, 65, topY+220)},
@@ -239,11 +238,6 @@ func (g *Game) onPlaylistClick(id string) bool {
 		g.plMenu = plMenuNone
 		g.hidePL = true
 		g.syncWindowSize()
-		g.markConfigDirty()
-		return true
-	case WidgetPlaylistModeSearch:
-		g.plMenu = plMenuNone
-		g.browserMode = true
 		g.markConfigDirty()
 		return true
 	case WidgetPlaylistAdd:
@@ -545,16 +539,6 @@ func (g *Game) drawPlaylist(screen *ebiten.Image, topY int) {
 	if g.pointer.Active() == WidgetPlaylistClose && g.pointer.Pressed() && g.view.HasSprite(skin.PlaylistCloseSelected) {
 		g.drawSprite(screen, skin.PlaylistCloseSelected, image.Pt(264, topY+3))
 	}
-
-	// Quick [SRCH] mode pill in the top-right spacer to jump to Catalog Search.
-	srchRect := image.Rect(206, topY+4, 248, topY+16)
-	srchBg := colButtonBg
-	if g.pointer.Hot() == WidgetPlaylistModeSearch {
-		srchBg = colButtonActive
-	}
-	vector.DrawFilledRect(screen, float32(srchRect.Min.X), float32(srchRect.Min.Y), float32(srchRect.Dx()), float32(srchRect.Dy()), srchBg, false)
-	vector.StrokeRect(screen, float32(srchRect.Min.X)+0.5, float32(srchRect.Min.Y)+0.5, float32(srchRect.Dx()-1), float32(srchRect.Dy()-1), 1, colBorder, false)
-	drawTTFText(screen, g.textFace, "SEARCH", srchRect.Min.X+4, srchRect.Min.Y+1, style.Normal)
 
 	// 2. Middle left/right borders + track list background (y = topY+20 .. topY+194).
 	midH := PlaylistHeight - 20 - 38 // 174

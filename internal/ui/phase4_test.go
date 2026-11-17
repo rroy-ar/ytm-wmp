@@ -151,10 +151,10 @@ func TestDockedRackTogglesResizeOnlyOnDiscreteChangesAndDrawsAllModes(t *testing
 	g.toggleDebug()
 	g.Draw(screen)
 
-	// Switch to Browser mode while EQ is open and draw.
-	g.onClick(WidgetPlaylistModeSearch)
+	// Switch to Browser mode via Eject while EQ is open and draw.
+	g.onClick(WidgetEject)
 	if !g.browserMode {
-		t.Fatal("WidgetPlaylistModeSearch should switch to browserMode")
+		t.Fatal("WidgetEject should switch to browserMode")
 	}
 	g.Draw(screen)
 

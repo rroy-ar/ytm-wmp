@@ -170,7 +170,7 @@ Controls:
   `Ctrl+A` select all playlist rows, `Ctrl+V` / `Super+V` / `Shift+Insert`
   paste into search (or import M3U/URLs when Playlist is focused), `Ctrl+U` /
   `Ctrl+Backspace` clear search while focused, `Enter` submit search, `Esc`
-  unfocus search/modal/menu or dismiss active toast, `Space` play/pause, `S`
+  unfocus search/modal/menu, dismiss active toast, or close catalog, `Space` play/pause, `S`
   stop, `Z`/`B` previous/next, `Left`/`Right` seek ±5s, `Up`/`Down` volume
   ±10% (or move selection while searching), `R` cycle repeat (`off`/`all`/
   `one`), `H` toggle shuffle, `A` toggle Up Next radio autoplay, `F1` debug

@@ -826,6 +826,13 @@ func (g *Game) openCollection(col catalog.Collection) {
 	g.searcher.Browse(col)
 }
 
+func (g *Game) closeCatalog() {
+	g.showSettings = false
+	g.browserMode = false
+	g.blurSearch()
+	g.markConfigDirty()
+}
+
 func (g *Game) popDetail() {
 	if len(g.detailStack) == 0 {
 		return
@@ -857,10 +864,7 @@ func (g *Game) onBrowserClick(id string) bool {
 		g.blurSearch()
 		return true
 	case WidgetBrowserModePL:
-		g.showSettings = false
-		g.browserMode = false
-		g.blurSearch()
-		g.markConfigDirty()
+		g.closeCatalog()
 		return true
 	}
 

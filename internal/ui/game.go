@@ -870,6 +870,10 @@ func (g *Game) handleKeys() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.dismissActiveToast() {
 		return
 	}
+	if g.browserMode && !g.hidePL && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.closeCatalog()
+		return
+	}
 	g.handlePlaylistKeys()
 
 	if g.ctrl == nil {

@@ -14,10 +14,10 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"ytm-wmp/internal/artwork"
-	"ytm-wmp/internal/model"
-	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/artwork"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
 )
 
 func TestTransportButtonsSendPlaybackCommands(t *testing.T) {

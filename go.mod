@@ -1,4 +1,4 @@
-module ytm-wmp
+module github.com/rroy-ar/ytm-wmp
 
 go 1.27.3
 

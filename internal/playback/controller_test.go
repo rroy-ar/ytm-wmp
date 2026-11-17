@@ -13,10 +13,10 @@ import (
 	"time"
 	"unsafe"
 
-	"ytm-wmp/internal/audio"
-	"ytm-wmp/internal/deps"
-	"ytm-wmp/internal/model"
-	"ytm-wmp/internal/ytdlp"
+	"github.com/rroy-ar/ytm-wmp/internal/audio"
+	"github.com/rroy-ar/ytm-wmp/internal/deps"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/ytdlp"
 )
 
 func TestControllerTenTrackQueueAutoAdvancesAndNavigates(t *testing.T) {

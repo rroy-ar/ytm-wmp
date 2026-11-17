@@ -11,10 +11,10 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
-	"ytm-wmp/internal/m3u"
-	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/skin"
-	"ytm-wmp/internal/store"
+	"github.com/rroy-ar/ytm-wmp/internal/m3u"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/store"
 )
 
 type playlistMenuKind int

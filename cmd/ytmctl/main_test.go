@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"ytm-wmp/internal/artwork"
-	"ytm-wmp/internal/catalog"
-	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/artwork"
+	"github.com/rroy-ar/ytm-wmp/internal/catalog"
+	catalogytmusic "github.com/rroy-ar/ytm-wmp/internal/catalog/ytmusic"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 type fakeCatalog struct {

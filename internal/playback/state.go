@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 // State represents the playback state machine.

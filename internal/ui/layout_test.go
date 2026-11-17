@@ -4,7 +4,7 @@ import (
 	"image"
 	"testing"
 
-	"ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
 )
 
 func TestLayoutIsFixedLogicalCanvas(t *testing.T) {

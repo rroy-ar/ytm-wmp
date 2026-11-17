@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 // Parse reads an M3U/M3U8 stream and extracts YouTube track entries.

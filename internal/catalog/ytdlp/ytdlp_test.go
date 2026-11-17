@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"ytm-wmp/internal/catalog"
+	"github.com/rroy-ar/ytm-wmp/internal/catalog"
 )
 
 type fakeRunner struct {

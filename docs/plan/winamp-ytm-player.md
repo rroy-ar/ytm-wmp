@@ -1178,35 +1178,3 @@ Recent trail as of this update (newest first):
 Next up is Phase 7 (hardening, multi-skin corpus smoke testing, performance
 profiling, and cross-platform CI for `v0.1`), with optional Phase 6 fidelity
 chunks (EQ DSP, spectrum visualizer, shade/`region.txt`, MPRIS).
-
-## 15. Open questions
-
-Status is marked for each:
-
-1. **Catalog:** Is `yt-dlp` search (YouTube results) acceptable for v1, or do you
-   require true YouTube Music results via InnerTube? **Open.** Recommendation:
-   ship yt-dlp search first behind `Catalog`; add InnerTube in 3B if needed.
-2. **Account/library:** public catalog only, or cookies/OAuth for liked
-   songs/private playlists? **Open.** Recommendation: public only; separate
-   phase.
-3. **Platforms:** Linux-only v1, or Windows/macOS CI from the start?
-   **Decided for now: Linux first, keep the others buildable.** Native CI later.
-4. **Window model:** one OS window with internal Winamp-style windows?
-   **Decided: yes**, recorded in ADR 0002. Phase 1 uses one fixed main window.
-5. **Skin fidelity:** main + playlist + EQ chrome enough for v1, with shade,
-   double-size, and `region.txt` deferred to Phase 6? **Decided: yes.**
-6. **Local files/M3U:** support local audio files, or only YouTube URLs/IDs?
-   **Open.** Recommendation: URLs/IDs only in v1; local files are a separate
-   source abstraction.
-7. **Tool distribution:** require system `yt-dlp`/`ffmpeg`, or bundle/auto-
-   download? **Decided: system tools with startup checks**, implemented in
-   `internal/deps`. Bundling remains a release-time decision.
-8. **Module path:** keep `module ytm-wmp`, or switch to a GitHub path before
-   imports spread? **Open.** Recommendation: switch before the repo is public.
-9. **Browser window styling:** classic-skin-colored panel or full `gen.bmp`
-   frame? **Open.** Recommendation: simple panel first; `gen.bmp` later.
-10. **Clipboard/file dialogs:** add a dependency or skip? **Decided:** both
-    browser search paste and the main-window skin file picker are implemented
-    dependency-free via OS tools (`xclip`/`xsel`/`wl-paste` +
-    `zenity`/`yad`/`qarma`/`kdialog`, `pbpaste`/`osascript`, and PowerShell
-    `Get-Clipboard`/`OpenFileDialog`).

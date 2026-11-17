@@ -15,9 +15,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
-	"ytm-wmp/internal/skin"
-	"ytm-wmp/internal/store"
-	"ytm-wmp/internal/ui/skinview"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/store"
+	"github.com/rroy-ar/ytm-wmp/internal/ui/skinview"
 )
 
 // ToolStatus reports startup or re-checked external dependency state.

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 func TestDefaultConfigAndRoundTrip(t *testing.T) {

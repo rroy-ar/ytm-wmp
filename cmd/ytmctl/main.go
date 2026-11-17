@@ -17,12 +17,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"ytm-wmp/internal/artwork"
-	"ytm-wmp/internal/catalog"
-	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
-	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
-	"ytm-wmp/internal/deps"
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/artwork"
+	"github.com/rroy-ar/ytm-wmp/internal/catalog"
+	catalogytdlp "github.com/rroy-ar/ytm-wmp/internal/catalog/ytdlp"
+	catalogytmusic "github.com/rroy-ar/ytm-wmp/internal/catalog/ytmusic"
+	"github.com/rroy-ar/ytm-wmp/internal/deps"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 type catalogFactory func(ctx context.Context, backend string) (catalog.Catalog, error)

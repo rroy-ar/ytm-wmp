@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 // Output format produced by ffmpeg. Ebitengine's NewPlayerF32 consumes raw

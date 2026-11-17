@@ -13,10 +13,10 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"ytm-wmp/internal/m3u"
-	"ytm-wmp/internal/model"
-	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/m3u"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
 )
 
 func TestMainControlsShuffleRepeatTimeAndClose(t *testing.T) {

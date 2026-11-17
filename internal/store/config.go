@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 const (

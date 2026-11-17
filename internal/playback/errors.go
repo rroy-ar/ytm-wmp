@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"ytm-wmp/internal/audio"
+	"github.com/rroy-ar/ytm-wmp/internal/audio"
 )
 
 // Error taxonomy sentinels mapped to actionable user-facing messages.

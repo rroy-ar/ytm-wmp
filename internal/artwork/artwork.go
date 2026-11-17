@@ -45,7 +45,7 @@ const (
 	// MaxDimension guards against malformed huge image headers.
 	MaxDimension = 4096
 	// DefaultUserAgent is sent on thumbnail HTTP requests.
-	DefaultUserAgent = "ytm-wmp/0.1"
+	DefaultUserAgent = "github.com/rroy-ar/ytm-wmp/0.1"
 
 	maxPixels = 16_000_000
 )

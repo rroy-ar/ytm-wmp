@@ -18,19 +18,19 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"ytm-wmp/internal/artwork"
-	"ytm-wmp/internal/audio"
-	"ytm-wmp/internal/catalog"
-	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
-	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
-	"ytm-wmp/internal/deps"
-	"ytm-wmp/internal/m3u"
-	"ytm-wmp/internal/model"
-	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/skin"
-	"ytm-wmp/internal/store"
-	"ytm-wmp/internal/ui"
-	"ytm-wmp/internal/ytdlp"
+	"github.com/rroy-ar/ytm-wmp/internal/artwork"
+	"github.com/rroy-ar/ytm-wmp/internal/audio"
+	"github.com/rroy-ar/ytm-wmp/internal/catalog"
+	catalogytdlp "github.com/rroy-ar/ytm-wmp/internal/catalog/ytdlp"
+	catalogytmusic "github.com/rroy-ar/ytm-wmp/internal/catalog/ytmusic"
+	"github.com/rroy-ar/ytm-wmp/internal/deps"
+	"github.com/rroy-ar/ytm-wmp/internal/m3u"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/store"
+	"github.com/rroy-ar/ytm-wmp/internal/ui"
+	"github.com/rroy-ar/ytm-wmp/internal/ytdlp"
 )
 
 const (

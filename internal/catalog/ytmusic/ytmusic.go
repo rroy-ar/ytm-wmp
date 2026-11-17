@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"ytm-wmp/internal/catalog"
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/catalog"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 const (
@@ -45,7 +45,7 @@ const (
 	// DefaultMaxResponseBytes caps InnerTube JSON payloads so oversized bodies cannot OOM.
 	DefaultMaxResponseBytes int64 = 16 << 20
 	// DefaultUserAgent is sent on InnerTube HTTP requests.
-	DefaultUserAgent = "ytm-wmp/0.1"
+	DefaultUserAgent = "github.com/rroy-ar/ytm-wmp/0.1"
 
 	// songsSearchParams filters WEB_REMIX search results to the Songs shelf.
 	songsSearchParams = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"

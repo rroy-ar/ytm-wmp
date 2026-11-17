@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 const maxHistory = 256

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ytm-wmp/internal/audio"
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/audio"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 const (

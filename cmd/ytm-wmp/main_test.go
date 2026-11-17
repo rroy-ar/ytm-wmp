@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	catalogytdlp "ytm-wmp/internal/catalog/ytdlp"
-	catalogytmusic "ytm-wmp/internal/catalog/ytmusic"
-	"ytm-wmp/internal/model"
-	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/store"
-	"ytm-wmp/internal/ui"
+	catalogytdlp "github.com/rroy-ar/ytm-wmp/internal/catalog/ytdlp"
+	catalogytmusic "github.com/rroy-ar/ytm-wmp/internal/catalog/ytmusic"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
+	"github.com/rroy-ar/ytm-wmp/internal/store"
+	"github.com/rroy-ar/ytm-wmp/internal/ui"
 )
 
 func TestChooseSkinPrefersExplicitPath(t *testing.T) {

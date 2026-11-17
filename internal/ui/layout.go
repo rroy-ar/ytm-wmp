@@ -3,8 +3,8 @@ package ui
 import (
 	"image"
 
-	"ytm-wmp/internal/catalog"
-	"ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/catalog"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
 )
 
 // Fixed logical dimensions in 1x skin coordinates.

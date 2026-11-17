@@ -14,7 +14,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
 )
 
 // View is a GPU-backed view of one skin.

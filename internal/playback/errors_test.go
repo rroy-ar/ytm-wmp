@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"ytm-wmp/internal/audio"
+	"github.com/rroy-ar/ytm-wmp/internal/audio"
 )
 
 func TestClassifyError(t *testing.T) {

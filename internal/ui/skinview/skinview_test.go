@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/image/bmp"
 
-	"ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
 )
 
 func TestViewCachesSprites(t *testing.T) {

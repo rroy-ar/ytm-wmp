@@ -11,9 +11,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"golang.org/x/image/font/gofont/goregular"
 
-	"ytm-wmp/internal/playback"
-	"ytm-wmp/internal/skin"
-	"ytm-wmp/internal/ui/skinview"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
+	"github.com/rroy-ar/ytm-wmp/internal/skin"
+	"github.com/rroy-ar/ytm-wmp/internal/ui/skinview"
 )
 
 const (

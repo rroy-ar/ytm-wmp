@@ -5,7 +5,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
 func makeTracks(n int) []model.Track {

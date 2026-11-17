@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,5 +188,38 @@ func TestDebouncedSaver(t *testing.T) {
 	raw, _ := os.ReadFile(path)
 	if !json.Valid(raw) {
 		t.Fatalf("saved config is invalid JSON: %s", raw)
+	}
+}
+
+func TestSanitizeScale(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want float64
+	}{
+		{0, 1.0},
+		{-1, 1.0},
+		{math.NaN(), 1.0},
+		{math.Inf(1), 1.0},
+		{1.0, 1.0},
+		{1.1, 1.1},
+		{1.24, 1.2},
+		{1.26, 1.3},
+		{1.9, 1.9},
+		{2.0, 2.0},
+		{2.5, 2.0},
+	}
+	for _, tc := range cases {
+		got := SanitizeScale(tc.in)
+		if got != tc.want {
+			t.Errorf("SanitizeScale(%v) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+
+	cfg, err := Migrate([]byte(`{"version":1,"scale":1.3}`))
+	if err != nil {
+		t.Fatalf("Migrate = %v", err)
+	}
+	if cfg.Scale != 1.3 {
+		t.Fatalf("cfg.Scale = %v, want 1.3", cfg.Scale)
 	}
 }

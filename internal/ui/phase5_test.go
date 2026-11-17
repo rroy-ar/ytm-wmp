@@ -285,17 +285,26 @@ func TestSettingsScaleBufferCacheAndTools(t *testing.T) {
 		t.Fatal("WidgetBrowserSettings did not open Settings")
 	}
 
-	// Scale toggle 1x -> 2x -> 1x.
-	g.onClick(WidgetSettingsScale)
-	if g.scale != 2 {
-		t.Fatalf("scale = %d, want 2", g.scale)
+	// Scale cycle 1x -> 1.10x -> ... -> 2x -> 1x.
+	wantScales := []float64{1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 1.0}
+	for i, want := range wantScales {
+		g.onClick(WidgetSettingsScale)
+		if g.scale != want {
+			t.Fatalf("step %d: scale = %v, want %v", i, g.scale, want)
+		}
+		wantW, wantH := ScaledWindowSize(WindowWidth, WindowHeight, want)
+		if len(resizes) != i+1 || resizes[i] != image.Pt(wantW, wantH) {
+			t.Fatalf("step %d: resizes = %v, want last (%d, %d)", i, resizes, wantW, wantH)
+		}
 	}
-	if len(resizes) != 1 || resizes[0] != image.Pt(WindowWidth*2, WindowHeight*2) {
-		t.Fatalf("resizes = %v, want 2x", resizes)
+	if got := formatScaleLabel(1.0); got != "1X" {
+		t.Fatalf("formatScaleLabel(1.0) = %q, want 1X", got)
 	}
-	g.onClick(WidgetSettingsScale)
-	if g.scale != 1 {
-		t.Fatalf("scale = %d, want 1", g.scale)
+	if got := formatScaleLabel(1.1); got != "1.10X" {
+		t.Fatalf("formatScaleLabel(1.1) = %q, want 1.10X", got)
+	}
+	if got := formatScaleLabel(2.0); got != "2X" {
+		t.Fatalf("formatScaleLabel(2.0) = %q, want 2X", got)
 	}
 
 	// Buffer cycle: 0 -> 100ms.
@@ -379,7 +388,7 @@ func TestConfigPersistenceColdStartRoundTrip(t *testing.T) {
 	if err != nil || !existed {
 		t.Fatalf("store.Load = (%+v, %v, %v)", loaded, existed, err)
 	}
-	if loaded.Skin != "/skins/retro.wsz" || loaded.Volume != 0.65 || loaded.Scale != 2 || loaded.BufferMs != 100 {
+	if loaded.Skin != "/skins/retro.wsz" || loaded.Volume != 0.65 || loaded.Scale != 1.1 || loaded.BufferMs != 100 {
 		t.Fatalf("persisted config scalars = %+v", loaded)
 	}
 	if !loaded.Windows[store.WindowEQ].Visible || !loaded.Windows[store.WindowPlaylist].Visible || !loaded.TimeRemaining || !loaded.BrowserMode {
@@ -397,8 +406,8 @@ func TestConfigPersistenceColdStartRoundTrip(t *testing.T) {
 		WithInitialConfig(loaded),
 	)
 	defer g2.Close()
-	if !g2.showEQ || g2.hidePL || !g2.browserMode || !g2.timeRemaining || g2.scale != 2 || g2.bufferMs != 100 || g2.searchQuery != "daft punk" {
-		t.Fatalf("restored Game state mismatch: showEQ=%v hidePL=%v browser=%v rem=%v scale=%d buf=%d query=%q",
+	if !g2.showEQ || g2.hidePL || !g2.browserMode || !g2.timeRemaining || g2.scale != 1.1 || g2.bufferMs != 100 || g2.searchQuery != "daft punk" {
+		t.Fatalf("restored Game state mismatch: showEQ=%v hidePL=%v browser=%v rem=%v scale=%v buf=%d query=%q",
 			g2.showEQ, g2.hidePL, g2.browserMode, g2.timeRemaining, g2.scale, g2.bufferMs, g2.searchQuery)
 	}
 }

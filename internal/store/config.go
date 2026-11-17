@@ -140,7 +140,7 @@ type Config struct {
 	Skin          string                 `json:"skin,omitempty"`
 	Volume        float64                `json:"volume"`
 	Balance       float64                `json:"balance,omitempty"`
-	Scale         int                    `json:"scale"`
+	Scale         float64                `json:"scale"`
 	BufferMs      int                    `json:"buffer_ms,omitempty"`
 	CacheDir      string                 `json:"cache_dir,omitempty"`
 	CacheMaxMB    int                    `json:"cache_max_mb"`
@@ -197,6 +197,17 @@ func Migrate(raw []byte) (Config, error) {
 	return Sanitize(cfg), nil
 }
 
+// SanitizeScale clamps scale to [1.0, 2.0] and rounds to the nearest 0.10 increment.
+func SanitizeScale(scale float64) float64 {
+	if math.IsNaN(scale) || math.IsInf(scale, 0) || scale < 1.0 {
+		return 1.0
+	}
+	if scale > 2.0 {
+		return 2.0
+	}
+	return math.Round(scale*10) / 10
+}
+
 // Sanitize clamps numeric values, normalizes repeat/scale/window defaults, and
 // filters invalid queue entries.
 func Sanitize(cfg Config) Config {
@@ -218,9 +229,7 @@ func Sanitize(cfg Config) Config {
 		cfg.Balance = 1
 	}
 
-	if cfg.Scale != 2 {
-		cfg.Scale = 1
-	}
+	cfg.Scale = SanitizeScale(cfg.Scale)
 
 	if cfg.BufferMs < 0 {
 		cfg.BufferMs = 0

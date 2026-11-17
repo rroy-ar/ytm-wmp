@@ -342,11 +342,8 @@ func (g *Game) syncWindowSize() {
 	}
 	g.lastCanvasHeight = h
 	if g.windowResizer != nil {
-		scale := g.scale
-		if scale != 2 {
-			scale = 1
-		}
-		g.windowResizer(WindowWidth*scale, h*scale)
+		w, winH := ScaledWindowSize(WindowWidth, h, g.scale)
+		g.windowResizer(w, winH)
 	}
 }
 
@@ -1021,10 +1018,7 @@ func (g *Game) currentConfig() store.Config {
 	if g.ctrl != nil {
 		snap = g.ctrl.Snapshot()
 	}
-	scale := g.scale
-	if scale != 2 {
-		scale = 1
-	}
+	scale := store.SanitizeScale(g.scale)
 	cfg := store.Config{
 		Version:       store.CurrentVersion,
 		Skin:          g.skinPath,

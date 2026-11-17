@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"ytm-wmp/internal/skin"
+	"ytm-wmp/internal/store"
 	"ytm-wmp/internal/ui/skinview"
 )
 
@@ -64,7 +66,7 @@ type cacheStatsResult struct {
 type settingsState struct {
 	defaultSkinPath string
 	configPath      string
-	scale           int
+	scale           float64
 	bufferMs        int
 	cacheDir        string
 	cacheMaxMB      int
@@ -86,9 +88,7 @@ type settingsState struct {
 }
 
 func (g *Game) initSettings() {
-	if g.scale != 2 {
-		g.scale = 1
-	}
+	g.scale = store.SanitizeScale(g.scale)
 	if g.cacheMaxMB == 0 && g.configPath == "" {
 		g.cacheMaxMB = 256
 	}
@@ -234,19 +234,42 @@ func (g *Game) recheckAllTools() {
 	g.startToolCheckAsync("ffmpeg", g.ffmpegStatus.Configured)
 }
 
-func (g *Game) setScale(scale int) {
-	if scale != 2 {
-		scale = 1
+// ScaledWindowSize computes the pixel window dimensions for the given canvas
+// size and UI scale factor.
+func ScaledWindowSize(canvasW, canvasH int, scale float64) (int, int) {
+	s := store.SanitizeScale(scale)
+	return int(math.Round(float64(canvasW) * s)), int(math.Round(float64(canvasH) * s))
+}
+
+func formatScaleLabel(scale float64) string {
+	tenths := int(math.Round(store.SanitizeScale(scale) * 10))
+	if tenths%10 == 0 {
+		return fmt.Sprintf("%dX", tenths/10)
 	}
+	return fmt.Sprintf("%.2fX", float64(tenths)/10.0)
+}
+
+func (g *Game) cycleScale() {
+	tenths := int(math.Round(store.SanitizeScale(g.scale) * 10))
+	tenths++
+	if tenths > 20 {
+		tenths = 10
+	}
+	g.setScale(float64(tenths) / 10.0)
+}
+
+func (g *Game) setScale(scale float64) {
+	scale = store.SanitizeScale(scale)
 	if g.scale == scale {
 		return
 	}
 	g.scale = scale
 	if g.windowResizer != nil {
-		g.windowResizer(WindowWidth*g.scale, g.canvasHeight()*g.scale)
+		w, h := ScaledWindowSize(WindowWidth, g.canvasHeight(), g.scale)
+		g.windowResizer(w, h)
 	}
 	g.markConfigDirty()
-	g.pushToast(toastInfo, fmt.Sprintf("Display scale: %dX", g.scale), defaultInfoToastTTL)
+	g.pushToast(toastInfo, "Display scale: "+formatScaleLabel(g.scale), defaultInfoToastTTL)
 }
 
 func (g *Game) cycleBufferMs() {
@@ -464,11 +487,7 @@ func (g *Game) onSettingsClick(id string) bool {
 		g.resetToDevSkin()
 		return true
 	case WidgetSettingsScale:
-		if g.scale == 2 {
-			g.setScale(1)
-		} else {
-			g.setScale(2)
-		}
+		g.cycleScale()
 		return true
 	case WidgetSettingsBuffer:
 		g.cycleBufferMs()
@@ -534,8 +553,8 @@ func (g *Game) drawSettings(screen *ebiten.Image, dy int) {
 	g.drawButtonRect(screen, offsetRect(SettingsSkinDevBounds, dy), WidgetSettingsSkinDev, "DEV")
 
 	// 2. Scale & Audio Buffer.
-	scaleLabel := fmt.Sprintf("SCALE: %dX", g.scale)
-	g.drawToggleButtonRect(screen, offsetRect(SettingsScaleBounds, dy), WidgetSettingsScale, scaleLabel, g.scale == 2)
+	scaleLabel := "SCALE: " + formatScaleLabel(g.scale)
+	g.drawToggleButtonRect(screen, offsetRect(SettingsScaleBounds, dy), WidgetSettingsScale, scaleLabel, g.scale > 1.0)
 	bufLabel := "BUFFER: DEFAULT"
 	if g.bufferMs > 0 {
 		bufLabel = fmt.Sprintf("BUFFER: %dms", g.bufferMs)

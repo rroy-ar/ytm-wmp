@@ -215,12 +215,9 @@ func run() error {
 
 	applyInitialPlaybackState(ctrl, cfg, tracks, queueIdx)
 
-	scale := cfg.Scale
-	if scale != 2 {
-		scale = 1
-	}
+	winW, winH := ui.ScaledWindowSize(ui.WindowWidth, initialCanvasHeight(cfg), cfg.Scale)
 	ebiten.SetWindowTitle("ytm-wmp")
-	ebiten.SetWindowSize(ui.WindowWidth*scale, initialCanvasHeight(cfg)*scale)
+	ebiten.SetWindowSize(winW, winH)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeDisabled)
 	if err := ebiten.RunGame(game); err != nil {
 		return fmt.Errorf("run game: %w", err)

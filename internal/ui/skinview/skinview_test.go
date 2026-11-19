@@ -162,3 +162,97 @@ func TestViewDeallocateClearsCachesAndIsIdempotent(t *testing.T) {
 	var nilView *View
 	nilView.Deallocate()
 }
+
+func TestViewSliderFallbacksAndPartialSheets(t *testing.T) {
+	writeBMP := func(t *testing.T, dir, name string, w, h int) {
+		t.Helper()
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := bmp.Encode(f, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("narrow 27-frame volume and balance without thumbs, 248px posbar", func(t *testing.T) {
+		dir := t.TempDir()
+		writeBMP(t, dir, "main.bmp", 275, 116)
+		writeBMP(t, dir, "volume.bmp", 66, 405)
+		writeBMP(t, dir, "balance.bmp", 47, 405)
+		writeBMP(t, dir, "posbar.bmp", 248, 10)
+
+		s, err := skin.Open(dir)
+		if err != nil {
+			t.Fatalf("Open = %v", err)
+		}
+		view := New(s)
+
+		if vf := view.VolumeFrame(1.0); vf.Bounds().Size() != image.Pt(66, 13) {
+			t.Fatalf("VolumeFrame(1.0) size = %v, want 66x13", vf.Bounds().Size())
+		}
+		if view.Missing("VOLUME_FRAME") {
+			t.Fatal("VolumeFrame should not fall back to magenta placeholder")
+		}
+		if bf := view.BalanceFrame(1.0); bf.Bounds().Size() != image.Pt(38, 13) {
+			t.Fatalf("BalanceFrame(1.0) size = %v, want 38x13", bf.Bounds().Size())
+		}
+		if view.Missing("BALANCE_FRAME") {
+			t.Fatal("BalanceFrame should not fall back to magenta placeholder")
+		}
+		if view.HasSprite(skin.MainVolumeThumb) || view.HasSprite(skin.MainBalanceThumb) {
+			t.Fatal("thumbs should be absent when sheets omit the thumb row")
+		}
+		if !view.HasSprite(skin.MainPositionBackground) || view.HasSprite(skin.MainPositionThumb) {
+			t.Fatal("248px posbar should have background but no thumb")
+		}
+	})
+
+	t.Run("68x419 volume without thumb row", func(t *testing.T) {
+		dir := t.TempDir()
+		writeBMP(t, dir, "main.bmp", 275, 116)
+		writeBMP(t, dir, "volume.bmp", 68, 419)
+
+		s, err := skin.Open(dir)
+		if err != nil {
+			t.Fatalf("Open = %v", err)
+		}
+		view := New(s)
+
+		if vf := view.VolumeFrame(1.0); vf.Bounds().Size() != image.Pt(68, 13) {
+			t.Fatalf("VolumeFrame(1.0) size = %v, want 68x13", vf.Bounds().Size())
+		}
+		if view.Missing("VOLUME_FRAME") {
+			t.Fatal("VolumeFrame should not fall back to magenta placeholder")
+		}
+		if view.HasSprite(skin.MainVolumeThumb) {
+			t.Fatal("MainVolumeThumb should be absent for 68x419 volume.bmp")
+		}
+	})
+
+	t.Run("missing balance.bmp falls back to volume.bmp", func(t *testing.T) {
+		dir := t.TempDir()
+		writeBMP(t, dir, "main.bmp", 275, 116)
+		writeBMP(t, dir, "volume.bmp", 68, 433)
+
+		s, err := skin.Open(dir)
+		if err != nil {
+			t.Fatalf("Open = %v", err)
+		}
+		view := New(s)
+
+		if bf := view.BalanceFrame(-0.5); bf.Bounds().Size() != image.Pt(38, 13) {
+			t.Fatalf("BalanceFrame(-0.5) size = %v, want 38x13", bf.Bounds().Size())
+		}
+		if view.Missing("BALANCE_FRAME") {
+			t.Fatal("BalanceFrame should fall back to volume.bmp when balance.bmp is missing")
+		}
+		if !view.HasSprite(skin.MainBalanceThumb) || !view.HasSprite(skin.MainBalanceThumbActive) {
+			t.Fatal("balance thumbs should fall back to volume.bmp when balance.bmp is missing")
+		}
+	})
+}

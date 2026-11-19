@@ -627,8 +627,7 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 	opVol.GeoM.Translate(float64(MainVolumeBounds.Min.X), float64(MainVolumeBounds.Min.Y))
 	screen.DrawImage(g.view.VolumeFrame(snap.Volume), opVol)
 	volThumbX := MainVolumeBounds.Min.X + int(math.Round(clampUnit(snap.Volume)*float64(65-14)))
-	volThumb := buttonSprite(skin.MainVolumeThumb, skin.MainVolumeThumbSelected, g.dragSlider == WidgetMainVolume)
-	g.drawSprite(screen, volThumb, image.Pt(volThumbX, MainVolumeBounds.Min.Y+1))
+	g.drawOptionalThumb(screen, skin.MainVolumeThumb, skin.MainVolumeThumbSelected, g.dragSlider == WidgetMainVolume, image.Pt(volThumbX, MainVolumeBounds.Min.Y+1))
 
 	// Balance slider (177, 57).
 	opBal := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
@@ -636,8 +635,7 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 	screen.DrawImage(g.view.BalanceFrame(g.balance), opBal)
 	balRatio := (g.balance + 1.0) / 2.0
 	balThumbX := MainBalanceBounds.Min.X + int(math.Round(clampUnit(balRatio)*float64(MainBalanceBounds.Dx()-14)))
-	balThumb := buttonSprite(skin.MainBalanceThumb, skin.MainBalanceThumbActive, g.dragSlider == WidgetMainBalance)
-	g.drawSprite(screen, balThumb, image.Pt(balThumbX, MainBalanceBounds.Min.Y+1))
+	g.drawOptionalThumb(screen, skin.MainBalanceThumb, skin.MainBalanceThumbActive, g.dragSlider == WidgetMainBalance, image.Pt(balThumbX, MainBalanceBounds.Min.Y+1))
 
 	// EQ / PL toggles.
 	eqName := toggleSprite(
@@ -663,8 +661,7 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 		}
 		frac = clampUnit(frac)
 		posX := MainPositionBounds.Min.X + int(math.Round(frac*float64(MainPositionBounds.Dx()-29)))
-		posThumb := buttonSprite(skin.MainPositionThumb, skin.MainPositionThumbSelected, g.dragSlider == WidgetMainPosition)
-		g.drawSprite(screen, posThumb, image.Pt(posX, MainPositionBounds.Min.Y))
+		g.drawOptionalThumb(screen, skin.MainPositionThumb, skin.MainPositionThumbSelected, g.dragSlider == WidgetMainPosition, image.Pt(posX, MainPositionBounds.Min.Y))
 	}
 
 	// Transport buttons + Eject.
@@ -1192,6 +1189,18 @@ func (g *Game) drawSprite(dst *ebiten.Image, name string, at image.Point) {
 	if g.view.Missing(name) {
 		// A silent skip makes coordinate bugs nearly impossible to find.
 		ebitenutil.DebugPrintAt(dst, name, at.X+1, at.Y+1)
+	}
+}
+
+// drawOptionalThumb draws an active or normal slider thumb when present in the
+// skin; classic skins that omit slider thumbs rely on the animated track alone.
+func (g *Game) drawOptionalThumb(dst *ebiten.Image, normal, active string, isActive bool, at image.Point) {
+	if isActive && g.view.HasSprite(active) {
+		g.drawSprite(dst, active, at)
+		return
+	}
+	if g.view.HasSprite(normal) {
+		g.drawSprite(dst, normal, at)
 	}
 }
 

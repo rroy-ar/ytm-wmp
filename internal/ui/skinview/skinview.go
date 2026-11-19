@@ -55,11 +55,24 @@ func New(s *skin.Skin) *View {
 
 	for name, def := range skin.Definitions() {
 		sheet, ok := v.sheets[def.Sheet]
-		if !ok || !def.Src.In(sheet.Bounds()) {
+		if !ok && def.Sheet == "balance.bmp" {
+			sheet, ok = v.sheets["volume.bmp"]
+		}
+		if !ok {
 			v.markMissing(name)
 			continue
 		}
-		sub, ok := sheet.SubImage(def.Src).(*ebiten.Image)
+		src := def.Src
+		if !src.In(sheet.Bounds()) {
+			if name == skin.MainVolumeBackground || name == skin.MainBalanceBackground {
+				src = src.Intersect(sheet.Bounds())
+			}
+		}
+		if src.Empty() || !src.In(sheet.Bounds()) {
+			v.markMissing(name)
+			continue
+		}
+		sub, ok := sheet.SubImage(src).(*ebiten.Image)
 		if !ok {
 			v.markMissing(name)
 			continue
@@ -82,20 +95,32 @@ func New(s *skin.Skin) *View {
 
 func (v *View) cacheSliderFrames() {
 	if sheet, ok := v.sheets["volume.bmp"]; ok {
+		bounds := sheet.Bounds()
 		for i := range v.volFrames {
-			rect := skin.VolumeFrameRect(float64(i) / 27.0)
-			if rect.In(sheet.Bounds()) {
+			rect := skin.VolumeFrameRect(float64(i) / 27.0).Intersect(bounds)
+			if !rect.Empty() {
 				if sub, ok := sheet.SubImage(rect).(*ebiten.Image); ok {
 					v.volFrames[i] = sub
 				}
 			}
 		}
 	}
-	if sheet, ok := v.sheets["balance.bmp"]; ok {
+	balSheet, ok := v.sheets["balance.bmp"]
+	if !ok {
+		balSheet, ok = v.sheets["volume.bmp"]
+	}
+	if ok {
+		bounds := balSheet.Bounds()
 		for i := range v.balFrames {
 			rect := skin.BalanceFrameRect(float64(i) / 27.0)
-			if rect.In(sheet.Bounds()) {
-				if sub, ok := sheet.SubImage(rect).(*ebiten.Image); ok {
+			if bounds.Dx() < rect.Max.X && bounds.Dx() >= rect.Dx() {
+				w := rect.Dx()
+				rect.Min.X = 0
+				rect.Max.X = w
+			}
+			rect = rect.Intersect(bounds)
+			if !rect.Empty() {
+				if sub, ok := balSheet.SubImage(rect).(*ebiten.Image); ok {
 					v.balFrames[i] = sub
 				}
 			}
@@ -180,8 +205,15 @@ func (v *View) HasNumbersEx() bool { return v.hasNumbersEx }
 func (v *View) VolumeFrame(volume float64) *ebiten.Image {
 	rect := skin.VolumeFrameRect(volume)
 	idx := rect.Min.Y / 15
-	if idx >= 0 && idx < len(v.volFrames) && v.volFrames[idx] != nil {
-		return v.volFrames[idx]
+	if idx < 0 {
+		idx = 0
+	} else if idx >= len(v.volFrames) {
+		idx = len(v.volFrames) - 1
+	}
+	for j := idx; j >= 0; j-- {
+		if v.volFrames[j] != nil {
+			return v.volFrames[j]
+		}
 	}
 	return v.sizedPlaceholder("VOLUME_FRAME", 68, 13)
 }
@@ -190,8 +222,15 @@ func (v *View) VolumeFrame(volume float64) *ebiten.Image {
 func (v *View) BalanceFrame(balance float64) *ebiten.Image {
 	rect := skin.BalanceFrameRect(balance)
 	idx := rect.Min.Y / 15
-	if idx >= 0 && idx < len(v.balFrames) && v.balFrames[idx] != nil {
-		return v.balFrames[idx]
+	if idx < 0 {
+		idx = 0
+	} else if idx >= len(v.balFrames) {
+		idx = len(v.balFrames) - 1
+	}
+	for j := idx; j >= 0; j-- {
+		if v.balFrames[j] != nil {
+			return v.balFrames[j]
+		}
 	}
 	return v.sizedPlaceholder("BALANCE_FRAME", 38, 13)
 }

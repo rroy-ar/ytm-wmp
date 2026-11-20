@@ -2,11 +2,12 @@
 
 Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, 4
 (complete classic skin system), 5 (full player UX and persistence), 6A (EQ DSP),
-and 6B (spectrum/oscilloscope visualizer) are complete; Phase 6C–6E (optional
-fidelity chunks) and Phase 7 (hardening and v0.1 release) remain. This document
-is the single source of truth for architecture, status, and upcoming milestones.
+6B (spectrum/oscilloscope visualizer), and 6C partial (shade mode + double-size `D`
+button) are complete; remaining optional Phase 6 chunks (`region.txt` masks,
+6D–6E) and Phase 7 (hardening and v0.1 release) remain. This document is the
+single source of truth for architecture, status, and upcoming milestones.
 
-Last updated: 2026-11-17.
+Last updated: 2026-11-19.
 
 ## 1. Where the project is today
 
@@ -990,7 +991,13 @@ writes, schema migration.
   renders spectrum bars (with falling peaks) and oscilloscope waveforms at
   `(24, 43, 100, 59)` using `viscolor.txt` (click to cycle Spectrum ->
   Oscilloscope -> Off).
-- 6C Shade/double-size/region masks; point-in-polygon hit testing.
+- **6C Shade/double-size/region masks (Partial):** implemented WindowShade mode
+  (`14px` collapsed bars via shade button or titlebar double-click) for Main
+  (mini transport, clock, mini seek bar), EQ (`eq_ex.bmp` + fallback volume/balance
+  sliders), and Playlist (`pledit.bmp` shade bar + track/duration), persisted in
+  `config.json` (`WindowState.Shaded`), plus the main clutter-bar `D` double-size
+  toggle (`1X` <-> `2X`, also `Ctrl+D`). Remaining in 6C: `region.txt` polygon
+  masks and point-in-polygon hit testing.
 - 6D Skin browser/cursors; skin folder scanning; `.cur` if cheap.
 - 6E Gapless/MPRIS/media keys; only after the rest is solid.
 
@@ -1128,6 +1135,9 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `698e468` feat(ui): implement shade mode and clutter-bar double-size D button
+- `3f206eb` feat(assets): add shade mode and clutter bar sprites to dev-skin
+- `d5c79a8` feat(store): persist window shaded state in config.json
 - `48a4eeb` feat(ui,cmd): wire config.json persistence, cold-start restore, and graceful startup
 - `a8ec50d` feat(ui): add error toasts, dependency alerts, and settings panel
 - `11fb3de` feat(ui,playback): add IME text field, browser tabs, detail views, and queue tab

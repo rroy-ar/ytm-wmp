@@ -72,16 +72,21 @@ error/status toasts with missing-dependency alerts; and an in-app Settings panel
   (`SET` / `F2`) for skin, `1X`/`2X` scale, audio buffer, artwork cache
   stats/prune/clear, and `yt-dlp`/`ffmpeg` path configuration.
 
-- **Phase 6A & 6B — EQ DSP & Visualizer**: added 10-band peaking biquad EQ
-  + preamp (`audio.EQReader`, live-wired from the EQ window with bypass and
-  clipping), and a `viscolor.txt`-styled spectrum analyzer / oscilloscope
-  (`audio.VisRing`, `audio.VisTapReader`, Hann-windowed 1024-pt FFT; click the
-  main-window visualizer box to cycle Spectrum -> Oscilloscope -> Off).
+- **Phase 6A–6C (partial) — EQ DSP, Visualizer, Shade & Double-Size**: added
+  10-band peaking biquad EQ + preamp (`audio.EQReader`, live-wired from the EQ
+  window with bypass and clipping); a `viscolor.txt`-styled spectrum analyzer /
+  oscilloscope (`audio.VisRing`, `audio.VisTapReader`, Hann-windowed 1024-pt
+  FFT; click the main-window visualizer box to cycle Spectrum -> Oscilloscope
+  -> Off); WindowShade mode (`14px` collapsed bars via the shade button or
+  titlebar double-click for Main, EQ, and Playlist, persisted in
+  `config.json`); and the main clutter-bar `D` double-size toggle (`1X` <->
+  `2X`, also `Ctrl+D`).
 
 ### What's next
 
-- **Phase 6C–6E (optional) & Phase 7**: shade/`region.txt` modes, performance/allocation
-  profiling, multi-skin corpus verification, packaging, and `v0.1` release hardening.
+- **Phase 6C (region masks)–6E (optional) & Phase 7**: `region.txt` polygon
+  masks, performance/allocation profiling, multi-skin corpus verification,
+  packaging, and `v0.1` release hardening.
 
 See [`docs/plan/winamp-ytm-player.md`](docs/plan/winamp-ytm-player.md) for the
 detailed plan and [`AGENTS.md`](AGENTS.md) for repo conventions.
@@ -158,8 +163,11 @@ Controls:
 - Mouse: Previous, Play, Pause, Stop, Next, Eject (opens/focuses catalog
   search) transport buttons; main window time display (click to toggle
   elapsed/remaining), volume/balance/seek bars, `SHUF`/`REP`/`EQ`/`PL` toggles,
+  clutter-bar `D` double-size toggle (`1X` <-> `2X`),
   skin picker button (`SK` to the right of `REP`, opens the OS file explorer to
-  hot-reload a `.wsz`/`.zip` skin), and close button; EQ window `ON`/`AUTO`/`PRESETS`/`+12dB`/`0dB`/`-12dB` and
+  hot-reload a `.wsz`/`.zip` skin), shade buttons / titlebar double-click on
+  Main/EQ/Playlist (plus mini transport/seek on Main shade and mini
+  volume/balance on EQ shade), and close button; EQ window `ON`/`AUTO`/`PRESETS`/`+12dB`/`0dB`/`-12dB` and
   preamp/10-band sliders; skinned Playlist window (row
   click/`Ctrl+Click`/`Shift+Click`/double-click to play, scrollbar/wheel,
   `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus including M3U save/load, mini
@@ -178,7 +186,8 @@ Controls:
   unfocus search/modal/menu, dismiss active toast, or close catalog, `Space` play/pause, `S`
   stop, `Z`/`B` previous/next, `Left`/`Right` seek ±5s, `Up`/`Down` volume
   ±10% (or move selection while searching), `R` cycle repeat (`off`/`all`/
-  `one`), `H` toggle shuffle, `A` toggle Up Next radio autoplay, `F1` debug
+  `one`), `H` toggle shuffle, `A` toggle Up Next radio autoplay, `Ctrl+D`
+  toggle double-size (`1X` <-> `2X`), `F1` debug
   overlay.
 
 Press `F1` for the debug overlay: FPS/TPS, playback state, queue index,

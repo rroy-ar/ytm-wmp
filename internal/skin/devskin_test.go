@@ -19,6 +19,9 @@ func TestDevSkinLoads(t *testing.T) {
 
 	for _, name := range []string{
 		MainBackground, TitlebarActive, TitlebarIdle,
+		MainShadeButton, MainShadeActive, MainShadeBg, MainShadeBgSelected,
+		MainShadeBtnSelected, MainShadeBtnDepressed, MainShadePosBg, MainShadePosThumb,
+		MainClutterBar, MainClutterDSelected,
 		PlayButton, PlayButtonActive, PauseButton, PauseButtonActive,
 		MainShuffleButton, MainRepeatButton, MainEQButton, MainPlaylistButton,
 		MainPositionBackground, MainPositionThumb,
@@ -26,7 +29,11 @@ func TestDevSkinLoads(t *testing.T) {
 		MainBalanceBackground, MainBalanceThumb,
 		MainPlayingIndicator, MainStereoSelected,
 		PlaylistTopLeftCorner, PlaylistBottomLeftCorner, PlaylistBottomRightCorner,
+		PlaylistShadeBg, PlaylistShadeBgLeft, PlaylistShadeBgRight, PlaylistShadeBgRightSelect,
+		PlaylistCollapseSelected, PlaylistExpandSelected,
 		EQWindowBackground, EQTitleBarSelected, EQSliderBackground, EQGraphBackground,
+		EQShadeBg, EQShadeBgSelected, EQShadeVolSliderCenter, EQShadeBalSliderCenter,
+		EQMaximizeButtonActive, EQMinimizeButtonActive, EQShadeCloseButton, EQShadeCloseActive,
 	} {
 		if _, _, ok := s.Lookup(name); !ok {
 			t.Errorf("dev skin is missing sprite %q", name)
@@ -36,7 +43,7 @@ func TestDevSkinLoads(t *testing.T) {
 	wantSizes := map[string]image.Point{
 		"main.bmp":     image.Pt(275, 116),
 		"cbuttons.bmp": image.Pt(136, 36),
-		"titlebar.bmp": image.Pt(312, 87),
+		"titlebar.bmp": image.Pt(344, 87),
 		"shufrep.bmp":  image.Pt(92, 85),
 		"posbar.bmp":   image.Pt(307, 10),
 		"volume.bmp":   image.Pt(68, 433),
@@ -47,6 +54,7 @@ func TestDevSkinLoads(t *testing.T) {
 		"text.bmp":     image.Pt(155, 18),
 		"pledit.bmp":   image.Pt(280, 186),
 		"eqmain.bmp":   image.Pt(275, 315),
+		"eq_ex.bmp":    image.Pt(275, 56),
 	}
 	for sheet, want := range wantSizes {
 		img, ok := s.Sheet(sheet)

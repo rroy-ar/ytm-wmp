@@ -7,89 +7,124 @@ button) are complete; remaining optional Phase 6 chunks (`region.txt` masks,
 6D–6E) and Phase 7 (hardening and v0.1 release) remain. This document is the
 single source of truth for architecture, status, and upcoming milestones.
 
-Last updated: 2026-11-19.
+Last updated: 2026-11-20.
 
 ## 1. Where the project is today
 
-Phases 1–4 turned the PoC into a multi-track, catalog-backed, fully skinned
-desktop player with clear architectural seams, pure-Go YouTube Music InnerTube
-(`WEB_REMIX`) and `yt-dlp` catalog backends, and classic main, playlist, and
-equalizer chrome.
+Phases 1–6C (partial) turned the PoC into a multi-track, catalog-backed, fully
+skinned desktop player with clear architectural seams, pure-Go YouTube Music
+InnerTube (`WEB_REMIX`) and `yt-dlp` catalog backends, classic main, playlist,
+and equalizer chrome (including WindowShade mode), versioned `config.json`
+persistence, live 10-band biquad EQ DSP, and a `viscolor.txt`-styled
+spectrum/oscilloscope visualizer.
 
 Implemented and covered by tests:
 
 - `cmd/ytm-wmp` is wiring only: `-url`, `-skin`, `-catalog`, `-query`,
-  `-playlist`, `-autoplay`, `-debug`, dependency checks, signal handling, skin
-  loading, catalog/artwork wiring, and `ebiten.RunGame`.
+  `-playlist`, `-autoplay`, `-debug`, dependency checks (`deps.CheckPath`),
+  `config.json` cold-start restore, signal handling, skin loading,
+  catalog/artwork wiring, and `ebiten.RunGame`.
 - `cmd/ytmctl` provides a debug CLI for `search`, `track`, `playlist`, `radio`,
   and `artwork` with `-catalog ytmusic|ytdlp` (resolving cold-cache artwork via
   `catalog.Catalog` or `model.DefaultThumbnailURL`).
-- Ebitengine v2.10.5 opens a 275x348 logical canvas (275x116 skinned main window
-  plus 275x232 catalog browser panel).
+- Ebitengine v2.10.5 opens the docked/stacked Winamp rack (`Main 275x116` or
+  `14px` shade, toggleable `EQ 275x116` or `14px` shade, toggleable
+  `Playlist/Browser 275x232` or `14px` shade) scaled in `0.10x` increments from
+  `1.0x` to `2.0x` (plus `D` / `Ctrl+D` double-size toggle).
 - `internal/model` owns shared domain types (`Track`, `StreamInfo`) and pure
   YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`,
   `DefaultThumbnailURL`).
+- `internal/deps` performs `yt-dlp` / `ffmpeg` discovery and version checks,
+  supporting both `PATH` lookup and custom user-configured binary paths
+  (`CheckPath`).
 - `internal/catalog` defines the `Catalog` interface, `RadioProvider`,
-  `IsPlaylistTarget` (playlist URLs/IDs plus YTM `/browse/...`, `VL...`,
-  `MPREb_...`, and `RDCLAK5uy_...` targets), and a debounced, generation-tagged
-  async `Searcher` (including direct single-track resolution via `Catalog.Track`
-  for pasted YouTube watch URLs and `yt:` / `ytdlp:` prefix routing to the
-  regular YouTube `yt-dlp` fallback catalog); `internal/catalog/ytmusic` implements pure-Go
-  YouTube Music InnerTube `WEB_REMIX` (`search`, `next`, `browse`, plus
-  unauthenticated `RDAMVM...` Up Next radio via `catalog.RadioProvider`) with
-  response byte caps and search/track/radio TTL caches; `internal/catalog/ytdlp`
-  implements `yt-dlp -J` search, track metadata, and playlist extraction with
-  stdout caps and search/track caches.
+  `TabCatalog` (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS` + collection detail
+  browsing), `IsPlaylistTarget` (playlist URLs/IDs plus YTM `/browse/...`,
+  `VL...`, `MPREb_...`, and `RDCLAK5uy_...` targets), and a debounced,
+  generation-tagged async `Searcher` (including direct single-track resolution
+  via `Catalog.Track` for pasted YouTube watch URLs and `yt:` / `ytdlp:` prefix
+  routing to the regular YouTube `yt-dlp` fallback catalog);
+  `internal/catalog/ytmusic` implements pure-Go YouTube Music InnerTube
+  `WEB_REMIX` (`search`, `next`, `browse`, tab search, collection/artist detail,
+  plus unauthenticated `RDAMVM...` Up Next radio via `catalog.RadioProvider`)
+  with response byte caps and search/track/radio TTL caches;
+  `internal/catalog/ytdlp` implements `yt-dlp -J` search, track metadata, and
+  playlist extraction with stdout caps and search/track caches.
 - `internal/artwork` fetches, decodes (JPEG/PNG/WebP), resizes (64x64 list and
-  300x300 now-playing), and caches thumbnails on disk and in an in-memory LRU.
+  300x300 now-playing), and caches thumbnails on disk and in an in-memory LRU,
+  with disk cache `Stats`, `PruneDisk`, and `ClearDisk` management.
+- `internal/store` implements versioned (`CurrentVersion = 1`) atomic
+  `config.json` persistence (`Migrate`, `Sanitize`, `SanitizeScale`),
+  `TrackRef` queue serialization (stripping signed URLs), `WindowState`
+  visibility/shade state, `DebouncedSaver` (`500 ms` + flush on close), and
+  `AtomicWriteFile`.
 - `internal/skin` loads `.wsz`, `.zip`, `fs.FS`, or a directory of loose BMPs
   plus `pledit.txt` and `viscolor.txt`. It normalizes case, backslashes, and
   nested paths, rejects modern `skin.xml` skins, caps per-asset/total bytes,
   total pixels, and ZIP entries, handles 32-bit all-zero-alpha BMPs, provides
-  the complete Webamp `skinSprites.ts` sprite table, slider-frame rects, and
-  `text.bmp` glyph lookup, and is fuzzed via `FuzzSkinOpen`.
-- `internal/ui/skinview` uploads each sheet once and caches `SubImage`
-  textures, 28-frame volume/balance/EQ slider strips, `EQ_GRAPH_LINE_COLORS`,
-  `text.bmp` bitmap glyphs, `pledit.txt` styles, and `viscolor.txt` palettes.
-  Missing or truncated sprites become labelled magenta placeholders.
+  the complete Webamp `skinSprites.ts` sprite table (including `eq_ex.bmp` and
+  main/playlist/EQ shade sprites), slider-frame rects, and `text.bmp` glyph
+  lookup, and is fuzzed via `FuzzSkinOpen`.
+- `internal/ui/skinview` uploads each sheet once (and releases GPU textures via
+  `View.Deallocate()` on skin reload/shutdown) and caches `SubImage` textures,
+  28-frame volume/balance/EQ slider strips (tolerating partial slider sheets,
+  missing `balance.bmp` via `volume.bmp` fallback, and optional slider thumbs),
+  `EQ_GRAPH_LINE_COLORS`, `text.bmp` bitmap glyphs, `pledit.txt` styles, and
+  `viscolor.txt` palettes. Missing or truncated sprites become labelled magenta
+  placeholders.
 - `internal/m3u` parses and formats `#EXTM3U` playlists of YouTube URLs/IDs.
 - `internal/ui` implements the docked/stacked Winamp rack (`Main 275x116`,
   toggleable `EQ 275x116`, toggleable `Playlist/Browser 275x232`) with discrete
-  OS window resizes on `EQ`/`PL` toggles, active/inactive titlebars, main
-  window bitmap marquee/time digits/volume/balance/seek/shuffle/repeat/EQ/PL
-  controls, a main-window skin picker button (`SK` to the right of `REP`) that
-  opens the OS file dialog (`zenity`/`yad`/`qarma`/`kdialog`, `osascript`, or
-  PowerShell `OpenFileDialog`) and hot-reloads `.wsz`/`.zip` skins off the UI
-  thread, skinned `pledit.bmp` playlist editor (virtualized rows,
-  click/Ctrl-click/Shift-click selection, double-click play, scrollbar/wheel,
-  `ADD`/`REM`/`SEL`/`MISC`/`LIST` popup menus, M3U import/export), skinned
-  `eqmain.bmp` equalizer (preamp + 10 bands, response graph, presets, atomic
-  `eq.json` persistence), `browserPanel` catalog search/artwork preview,
-  clipboard paste (`Ctrl+V` / `Super+V` / `Shift+Insert` / middle- or
-  right-click), and an `F1` debug overlay.
+  OS window resizes on `EQ`/`PL`/shade/scale changes, WindowShade `14px`
+  collapsed bars for Main/EQ/Playlist, clutter-bar `D` double-size toggle
+  (`1X` <-> `2X` / `Ctrl+D`), active/inactive titlebars, main window bitmap
+  marquee/time digits/volume/balance/seek/shuffle/repeat/EQ/PL controls, a
+  live `viscolor.txt` spectrum analyzer & oscilloscope (`vis.go`, click to cycle
+  Spectrum -> Oscilloscope -> Off), a main-window skin picker button (`SK` to
+  the right of `REP`) that opens the OS file dialog (`zenity`/`yad`/`qarma`/
+  `kdialog`) and hot-reloads `.wsz`/`.zip` skins off the UI thread, skinned
+  `pledit.bmp` playlist editor (virtualized rows, click/Ctrl-click/Shift-click
+  selection, double-click play, scrollbar/wheel, `ADD`/`REM`/`SEL`/`MISC`/
+  `LIST` popup menus, M3U import/export), skinned `eqmain.bmp` equalizer
+  (preamp + 10 bands wired live to `audio.EQReader`, response graph, presets,
+  atomic `eq.json` persistence), `browserPanel` catalog search/tabs
+  (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`), detail drill-down (`<BACK`),
+  right-click/direct collection queueing, `ALL->Q` append, artwork preview,
+  caret/IME `textField`, clipboard paste (`Ctrl+V` / `Super+V` / `Shift+Insert`
+  / middle- or right-click), `Esc` to close catalog/modals/toasts, dismissible
+  toasts with missing-dependency alerts, in-app Settings panel (`SET`/`F2`),
+  and an `F1` debug overlay (FPS/TPS, playback state, queue/pos, volume,
+  shuffle/repeat/autoplay, track ID, skin name, missing sprite count, cursor,
+  and hit/sprite rects).
 - `internal/playback` runs the Phase 2 actor (`Controller`), state machine,
-  queue (history, shuffle bag, repeat off/one/all), request-generation tracking,
-  seek-by-reopen (`baseOffset + sink.Position()`), zero-copy read-only
-  `Snapshot.Queue`, URL prefetching, optional `RadioProvider` queue-end
-  autoplay (with pre-EOF radio + stream URL prefetching), and error taxonomy
-  (`ErrToolMissing`, `ErrStaleStream`, `ErrFFmpeg`, `ErrNetwork`,
-  `ErrUnavailable`, `ErrCanceled`).
-- `internal/audio` runs ffmpeg with `f32le`, stereo, 48 kHz PCM, logs
-  `first_pcm_ms`, and exposes `SetVolume`/`Volume`/`Position` on `EbitenSink`.
+  queue (history, shuffle bag, repeat off/one/all, `RemoveIndices`, `MoveTrack`,
+  `SortQueue`), request-generation tracking, seek-by-reopen
+  (`baseOffset + sink.Position()`), zero-copy read-only `Snapshot.Queue`, URL
+  prefetching, optional `RadioProvider` queue-end autoplay (with pre-EOF radio +
+  stream URL prefetching), and error taxonomy (`ErrToolMissing`,
+  `ErrStaleStream`, `ErrFFmpeg`, `ErrNetwork`, `ErrUnavailable`, `ErrCanceled`).
+- `internal/audio` runs ffmpeg with `f32le`, stereo, 48 kHz PCM (returning
+  clean `io.EOF` on pipe teardown), logs `first_pcm_ms`, pipes through
+  `EQReader` (10-band peaking biquad EQ + preamp) and `VisTapReader` (`VisRing`
+  + 1024-pt Hann FFT `ComputeSpectrum`), and exposes `SetVolume`/`Volume`/
+  `Position`/`SetBufferSize`/`SetEQ`/`ReadVisSamples` on `EbitenSink`.
 - `internal/ytdlp` resolves stream URLs (`yt-dlp -g`) with bounded stdout/stderr
   and caches them for five hours keyed by video ID; a zero-frame stream is
   treated as stale and retried once with a fresh URL.
 - Shutdown cancels the playback actor, waits for all worker goroutines and
-  ffmpeg processes, deallocates cached GPU textures, and closes the audio sink.
-  Natural EOF waits for a normal ffmpeg exit instead of killing in the EOF
-  window.
-- `assets/dev-skin/` contains original BMPs at classic dimensions. No external
-  skin art is committed.
+  ffmpeg processes, flushes `config.json` / `eq.json`, deallocates cached GPU
+  textures, and closes the audio sink. Natural EOF waits for a normal ffmpeg exit
+  instead of killing in the EOF window.
+- `assets/dev-skin/` contains original BMPs at classic dimensions (including
+  Phase 4 sheets and Phase 6C `eq_ex.bmp` / shade / clutter-bar sprites). No
+  external skin art is committed.
 
 What is still missing:
 
-- Real `.wsz` skin corpus smoke verification and Linux CI (Phase 7).
-- Optional Phase 6 fidelity chunks (EQ DSP, spectrum visualizer, shade/`region.txt`).
+- Remaining optional Phase 6 fidelity chunks: `region.txt` polygon masks (rest
+  of 6C), skin browser/cursors (6D), and gapless/MPRIS/media keys (6E).
+- Phase 7 hardening: real `.wsz` skin corpus smoke verification, performance
+  profiling, packaging, Linux CI, and `v0.1` release.
 
 Keep the good parts: process cancellation, the stale-URL retry, the PCM pipe,
 and the short time-to-first-audio. Do not rewrite them into a framework.
@@ -99,7 +134,7 @@ and the short time-to-first-audio. Do not rewrite them into a framework.
 This is already a large v1. Do not add to it without cutting something else.
 
 - [x] Search YouTube Music (`yt-dlp` in 3A; InnerTube `WEB_REMIX` in 3B) or paste
-      a watch/playlist URL (M3U import arrives in Phase 4C/5).
+      a watch/playlist URL (M3U import/export landed in Phase 4).
 - [x] Queue with play, pause, stop, next, previous, seek, volume, shuffle, repeat.
 - [x] Metadata, duration, and artwork for the current track.
 - [x] Classic `.wsz` main window, playlist, and equalizer chrome.
@@ -118,7 +153,9 @@ Explicitly out of scope for v1:
 - True multiple OS windows. Ebitengine owns one window; use internal windows.
 - Account login/library sync. Public catalog first.
 - EQ DSP, spectrum analyzer, shade/double-size/region masks. These are
-  independently shippable Phase 6 chunks, not v1 blockers.
+  independently shippable Phase 6 chunks, not v1 blockers (6A EQ DSP, 6B
+  spectrum/oscilloscope, and 6C shade/double-size have now shipped; `region.txt`
+  masks remain optional).
 
 ## 3. Decisions and trade-offs
 
@@ -135,11 +172,11 @@ Explicitly out of scope for v1:
 | D9 | Text | Bitmap `text.bmp` for chrome; embedded TTF fallback for non-ASCII | Classic skins have no Unicode. Search/playlist titles do. Use bitmap for classic look, TTF where needed. |
 | D10 | Artwork cache | Files on disk by video ID; in-memory LRU of decoded images | Simple, inspectable, no database. Fetch/decode off the UI goroutine. |
 
-Phases 1–3B implemented D1, D2 (fixed main+browser rack), D3 (both `yt-dlp`
-and pure-Go InnerTube `WEB_REMIX` behind `catalog.Catalog`, selectable via
-`-catalog`), D4, D5, D6 (recorded in ADR 0003), D8, and D10. D2 is refined in
-ADR 0002 to use a docked/stacked rack in Phase 4B. D7 and D9 arrive in Phases
-4–5.
+Phases 1–5 implemented all of D1–D10: D1 (`ebiten/v2/audio`), D2 (refined in
+ADR 0002 to the docked/stacked Winamp rack in Phase 4B), D3 (both `yt-dlp` and
+pure-Go InnerTube `WEB_REMIX` behind `catalog.Catalog`, selectable via
+`-catalog`), D4, D5, D6 (recorded in ADR 0003), D7 (`internal/store` atomic
+JSON persistence), D8, D9 (`text.bmp` + TTF fallback), and D10.
 
 ### Deliberately not doing
 
@@ -147,47 +184,51 @@ ADR 0002 to use a docked/stacked rack in Phase 4B. D7 and D9 arrive in Phases
 - A custom decoder for every BMP bit depth before the corpus proves it is needed.
 - InnerTube authentication/cookies until the public player is solid.
 - SQLite, an ORM, a dependency-injection container, or a message bus.
-- Gapless playback (deep rabbit hole), EQ DSP, or visualizers in v1.
-- Native file dialogs (browser search clipboard paste is implemented without
-  adding Go dependencies via OS clipboard utilities in `internal/ui/clipboard.go`).
+- Gapless playback in v1 (deferred to optional Phase 6E; EQ DSP and
+  spectrum/oscilloscope visualizers were subsequently shipped in Phase 6A–6B).
+- Heavy Go GUI/toolkit dependencies for clipboard or file dialogs (clipboard
+  paste and the skin picker shell out to native OS utilities in
+  `internal/ui/clipboard.go` and `internal/ui/skinpicker.go`).
 
 ## 4. Target architecture
 
 ```text
-cmd/ytm-wmp/main.go          flags, dependency checks, skin load, wiring, RunGame
-cmd/ytmctl/main.go           Phase 3 debug CLI (search, track, playlist, artwork)
-internal/ui/                 Ebitengine Game, input, layout, browserPanel, debug overlay
-internal/ui/skinview/        one-time sheet upload + SubImage cache
-internal/ui/screens/         planned: main, playlist, equalizer, browser, settings
-internal/skin/               pure .wsz/.zip loader (Phase 1 subset)
-internal/playback/           actor Controller, queue, state machine, error taxonomy
-internal/audio/              ffmpeg f32le Source + Ebitengine sink
+cmd/ytm-wmp/main.go          flags, dependency checks, config restore, skin load, wiring, RunGame
+cmd/ytmctl/main.go           debug CLI (search, track, playlist, radio, artwork)
+internal/ui/                 Ebitengine Game, input, layout, main/EQ/vis/playlist/browser/settings/toasts
+internal/ui/skinview/        one-time sheet upload + SubImage/slider/glyph cache + Deallocate
+internal/skin/               pure .wsz/.zip/fs.FS/dir loader, sprite table, pledit/viscolor, fuzzing
+internal/playback/           actor Controller, queue, state machine, radio autoplay, error taxonomy
+internal/audio/              ffmpeg f32le Source, 10-band EQReader, VisRing/VisTapReader/FFT, EbitenSink
 internal/ytdlp/              yt-dlp -g stream resolver, bounded ExecRunner, 5h URL cache
 internal/model/              Track, StreamInfo, VideoID, IsVideoID, NormalizeTrackID, DefaultThumbnailURL
-internal/deps/               yt-dlp/ffmpeg discovery and version checks
-internal/catalog/            Catalog interface, IsPlaylistTarget, debounced Searcher
-internal/catalog/ytdlp/      Phase 3A yt-dlp -J catalog implementation
-internal/catalog/ytmusic/    Phase 3B pure-Go InnerTube WEB_REMIX catalog implementation
-internal/artwork/            thumbnail fetch/decode/resize/disk+LRU cache/placeholder
+internal/deps/               yt-dlp/ffmpeg discovery and version checks (PATH + custom paths)
+internal/catalog/            Catalog, RadioProvider, TabCatalog interfaces, IsPlaylistTarget, Searcher
+internal/catalog/ytdlp/      yt-dlp -J catalog implementation and caches
+internal/catalog/ytmusic/    pure-Go InnerTube WEB_REMIX catalog, radio, and tab/detail implementation
+internal/artwork/            thumbnail fetch/decode/resize/disk+LRU cache/prune+stats/placeholder
 internal/store/              versioned atomic config.json, TrackRef queue, debounced saver
-internal/testutil/           planned fake runner/source/skin helpers
+internal/m3u/                #EXTM3U parser and formatter for YouTube URLs/IDs
 assets/dev-skin/             original loose BMPs; no copyrighted skins
 docs/adr/                    short decision records (0001, 0002, 0003)
 ```
 
-`internal/app` was planned for the game loop, but Phase 1 kept `Game` in
-`internal/ui` because there is only one screen and no routing layer yet. Split it
-out when the playlist/EQ/browser window manager arrives in Phase 4/5, not before.
+`internal/app` and `internal/ui/screens` were sketched early on, but keeping
+`Game` and panel files (`playlist.go`, `eq.go`, `vis.go`, `browser.go`,
+`settings.go`, `toast.go`) directly in `internal/ui` kept the docked rack and
+shared widget state simple without an extra routing layer.
 
 Dependency direction is one-way:
 
 ```text
-main -> ui, playback, catalog, artwork, ytdlp, deps, skin
+main -> ui, playback, catalog, artwork, ytdlp, deps, skin, store, m3u
 ui -> skinview -> skin + ebiten
-ui -> playback, catalog, artwork, model (never ytdlp)
+ui -> playback, catalog, artwork, model, store, m3u (never ytdlp)
 playback -> audio, model (never ui, catalog, or ytdlp)
 catalog -> model (never ebiten, ui, playback, or ytdlp)
 artwork -> stdlib + x/image only (never ebiten, ui, or playback)
+store -> model (never ebiten, ui, playback, or ytdlp)
+m3u -> model (never ebiten, ui, playback, or ytdlp)
 ytdlp -> model (never audio)
 skin must not import ebiten
 ```
@@ -205,15 +246,17 @@ what makes it unit-testable and fuzzable without a graphics context.
 
 ```text
 Ebitengine Update (60 TPS)
-  ├─ first tick: audio.Init + skinview.New (textures uploaded once)
-  ├─ drain playback events       errors, state changes, TrackChanged, QueueChanged
+  ├─ first tick: audio.Init + skinview.New + UI TTF face init
+  ├─ drain events/tasks          playback events, async skin loads, settings results, toast expiry
   ├─ refresh Game.snap           single Controller.Snapshot() read per tick
   ├─ updateBrowser               search results, enrichments, queue enrich, lazy modal art, artwork drain
-  ├─ pointer.Update              transport + browser widget clicks
-  └─ handleKeys / F1 debug       commands sent via Controller.Send(...)
+  ├─ pointer.Update              transport, shade bars, sliders, EQ, playlist, browser/settings, toasts
+  ├─ textinput / keys / vis      IME search input, shortcuts, post-EQ visualizer FFT/scope update
+  └─ debounced persistence       maybeSaveEQ (eq.json) + maybeSaveConfig (config.json)
 
 Ebitengine Draw
-  └─ cached sprites + browser panel + placeholders + optional error/debug overlay (pure; no I/O or texture creation)
+  └─ main/EQ/playlist or shade bars + visualizer + browser/settings + toasts + F1 debug overlay
+     (pure; no I/O or texture creation)
 ```
 
 Rules:
@@ -319,6 +362,16 @@ type Catalog interface {
     Track(ctx context.Context, id string) (model.Track, error)
 }
 
+type RadioProvider interface {
+    Related(ctx context.Context, trackID string) ([]model.Track, error)
+}
+
+type TabCatalog interface {
+    SupportedTabs() []SearchTab
+    SearchCollections(ctx context.Context, tab SearchTab, query string, limit int) ([]Collection, error)
+    BrowseCollection(ctx context.Context, col Collection) (CollectionDetail, error)
+}
+
 type Searcher struct { /* debounced, generation-tagged async search */ }
 
 func IsPlaylistTarget(input string) bool
@@ -340,29 +393,35 @@ type Cache struct { /* disk cache + in-memory LRU + single-flight dedup */ }
 func NewCache(opts ...Option) *Cache
 func (c *Cache) LookupMemory(videoID string) (Bundle, bool)
 func (c *Cache) Get(ctx context.Context, videoID, thumbnailURL string) (Bundle, error)
+func (c *Cache) Stats() (DiskStats, error)
+func (c *Cache) PruneDisk(maxBytes int64) error
+func (c *Cache) ClearDisk() error
 func Placeholder(size int) image.Image
 
-// internal/skin (implemented Phase 1 subset)
+// internal/skin (implemented)
 type Sprite struct {
     Sheet string          // "main.bmp", "cbuttons.bmp", ...
     Src   image.Rectangle // source rect in the sheet
 }
 
-type Skin struct { /* sheets + warnings; accessors below */ }
+type Skin struct { /* sheets + playlistStyle + visColors + warnings */ }
 
 func Open(path string) (*Skin, error)
+func OpenBytes(data []byte) (*Skin, error)
+func OpenFS(fsys fs.FS) (*Skin, error)
 func (s *Skin) Lookup(name string) (image.Image, image.Rectangle, bool)
 func (s *Skin) Sheet(name string) (image.Image, bool)
 func (s *Skin) SheetNames() []string
+func (s *Skin) PlaylistStyle() PlaylistStyle
+func (s *Skin) VisColors() [24]color.RGBA
 func (s *Skin) Warnings() []string
-
-// Planned: OpenFS/OpenBytes for fuzzing; Font and Colors in Phase 4.
 ```
 
 Commands/events are sealed types (`Play`, `PlayIndex`, `Pause`, `Resume`,
 `Stop`, `Next`, `Prev`, `Seek`, `SetVolume`, `SetQueue`, `Enqueue`,
-`UpdateTrack`, `SetShuffle`, `SetRepeat`, `SetAutoplay`; `StateChanged`,
-`TrackChanged`, `QueueChanged`, `VolumeChanged`, `PlaybackError`).
+`RemoveIndices`, `MoveTrack`, `SortQueue`, `UpdateTrack`, `SetShuffle`,
+`SetRepeat`, `SetAutoplay`; `StateChanged`, `TrackChanged`, `QueueChanged`,
+`VolumeChanged`, `PlaybackError`).
 
 ## 6. `.wsz` parser design
 
@@ -372,42 +431,36 @@ table, not blog posts.
 
 ### 6.1 Loading pipeline
 
-Implemented in Phase 1:
+Implemented in Phases 1 and 4 (plus `eq_ex.bmp` in 6C):
 
-1. Accept `.wsz`, `.zip`, or a directory of loose files. The file extension is
-   not trusted; files are opened as ZIP.
-2. Read BMP entries through hard limits: 8 MiB per asset, 32 MiB total BMP
-   bytes, 16M total decoded pixels, 256 BMP assets, and 1024 ZIP entries.
-   Never extract to disk; loose files are read through `io.LimitReader`.
+1. Accept `.wsz`, `.zip`, `fs.FS` (`OpenFS`), raw bytes (`OpenBytes`), or a
+   directory of loose files. The file extension is not trusted; files are
+   opened as ZIP.
+2. Read assets through hard limits: 8 MiB per asset, 32 MiB total bytes,
+   16M total decoded pixels, 256 assets, 1024 ZIP entries, and 4096px max image
+   side. Never extract to disk; loose files are read through `io.LimitReader`.
 3. Build an index of lowercase basenames. Normalize `\` to `/`, ignore
-   `__MACOSX/`, `.DS_Store`, and `Thumbs.db`. Duplicate basenames currently
-   return a clear error; Phase 4 can choose "shortest path, then lexical" if a
-   real corpus needs it.
+   `__MACOSX/`, `.DS_Store`, and `Thumbs.db`. Duplicate basenames return a clear
+   error.
 4. Detect `skin.xml` and return `ErrModernSkin` with a clear message.
 5. Decode BMPs eagerly and deterministically. `main.bmp` is required. Optional
-   sheets that fail to decode become warnings and placeholders rather than
-   rejecting a usable main window. Phase 1 needs `main.bmp`, `cbuttons.bmp`, and
-   `titlebar.bmp`; the rest of the sheet list below is Phase 4.
-6. Build sprites from the canonical table. Validate every rect against its
-   sheet; a missing or truncated sheet yields a placeholder, not a panic.
-7. Return a `Skin` with decoded sheets and warnings. Bitmap font and colors are
-   Phase 4.
-
-Planned for Phase 4:
-
-8. Full required sheet set: `shufrep.bmp`, `posbar.bmp`, `volume.bmp`,
-   `balance.bmp`, `playpaus.bmp`, `monoster.bmp`, `numbers.bmp` (or
-   `nums_ex.bmp`), and `text.bmp`. Optional: `nums_ex.bmp`, `pledit.bmp`,
-   `eqmain.bmp`, `eq_ex.bmp`, `gen.bmp`, `genex.bmp`, `viscolor.txt`,
-   `pledit.txt`, `region.txt`.
-9. Decode lazily/targeted if corpus memory measurements justify it; eager
-   decoding is simpler and currently bounded.
-10. Parse `pledit.txt` (INI-like colors) and `viscolor.txt` (24 RGB lines) with
-    sensible defaults when absent or malformed.
+   sheets (`cbuttons.bmp`, `titlebar.bmp`, `shufrep.bmp`, `posbar.bmp`,
+   `volume.bmp`, `balance.bmp`, `playpaus.bmp`, `monoster.bmp`, `numbers.bmp`,
+   `nums_ex.bmp`, `text.bmp`, `pledit.bmp`, `eqmain.bmp`, `eq_ex.bmp`) that are
+   missing or fail to decode become warnings and placeholders (with `balance.bmp`
+   falling back to `volume.bmp` when omitted, and partial slider strips or
+   missing thumbs tolerated gracefully).
+6. Parse `pledit.txt` (INI-like colors/font) and `viscolor.txt` (24 RGB lines)
+   with classic Winamp defaults when absent or malformed.
+7. Build sprites from the canonical Webamp sprite table. Validate every rect
+   against its sheet; a missing or truncated sheet yields a placeholder, not a
+   panic.
+8. Return a `Skin` with decoded sheets, `PlaylistStyle`, `VisColors`, and
+   warnings. (`region.txt` polygon masks remain optional Phase 6C work.)
 
 ### 6.2 BMP handling
 
-- `golang.org/x/image/bmp` supports 8, 24, and 32 bpp. Phase 1 uses it directly.
+- `golang.org/x/image/bmp` supports 8, 24, and 32 bpp directly.
 - For 32-bit BMPs, if the entire alpha channel is zero, force alpha to opaque.
   Many classic skins store alpha as zero and expect opaque pixels. This is
   implemented for both RGBA and NRGBA decodes.
@@ -416,30 +469,25 @@ Planned for Phase 4:
   placeholder; a broken `main.bmp` fails with the asset name.
 - `image.DecodeConfig` runs first and enforces per-image and total pixel budgets
   before allocation.
-- Current errors wrap the asset name; `ErrModernSkin` is a named sentinel. A
-  fuller `ErrUnsupportedBMP`/`ErrBadImage` taxonomy is still planned.
+- Errors wrap the asset name; `ErrModernSkin` is a named sentinel while broken
+  optional BMPs emit warnings and fall back to placeholders.
 
 ### 6.3 Sprite table and text
 
-- Phase 1 implemented the subset used by the walking skeleton: main background,
-  active/inactive title bar, and six transport buttons (normal/pressed). The
-  table lives in `internal/skin/sprites.go` with tests that keep every rect
-  inside its sheet.
-- Port the rest of Webamp's `skinSprites.ts` (MIT; keep attribution) in Phase 4.
-  It is the canonical source for coordinates, including the awkward
-  `titlebar.bmp` clutter bar and the playlist frames.
-- Do not hand-transcribe coordinates from tutorials. A wrong rect is hard to
-  debug; the table is data, not logic.
-- `text.bmp` is a 5x6 glyph grid (31 columns x 3 rows). Port Webamp's
-  `FONT_LOOKUP` (lowercase, digits, punctuation, `Å Ö Ä ? *`). Unsupported
-  runes fall back to a TTF or `?`.
-- `numbers.bmp`/`nums_ex.bmp` digits are 9x13. Use `nums_ex.bmp` when present.
-  Match Webamp's time-display layout for the colon/minus.
-- Volume and balance backgrounds are multi-frame strips (e.g. 68x420 and
-  38x420), not a single static image. Implement a slider-frame helper and
-  verify frame height/offset against Webamp's slider implementation.
-- Playlist colors and current-track highlight come from `pledit.txt`; fall back
-  to readable defaults.
+- Phase 4 ported Webamp's `skinSprites.ts` sprite table (MIT attribution) and
+  `FONT_LOOKUP` into `internal/skin/sprites.go`, with tests keeping every rect
+  inside its sheet and validating `assets/dev-skin/`. Phase 6C added `eq_ex.bmp`
+  and main/playlist/EQ shade + clutter-bar sprites.
+- `text.bmp` is a 5x6 glyph grid (31 columns x 3 rows) covering lowercase,
+  digits, punctuation, and `Å Ö Ä ? *`; non-ASCII/unsupported runes fall back
+  to an embedded TTF in the UI.
+- `numbers.bmp`/`nums_ex.bmp` digits are 9x13 (`nums_ex.bmp` preferred when
+  present, including minus sign support for remaining-time display).
+- Volume, balance, and EQ backgrounds are 28-frame multi-frame strips
+  (`VolumeFrameRect`, `BalanceFrameRect`, `EQSliderFrameRect`), pre-sliced in
+  `internal/ui/skinview` with bounds intersection for partial slider sheets.
+- Playlist colors and current-track highlight come from `pledit.txt` with
+  readable classic defaults.
 
 ### 6.4 Security and robustness
 
@@ -450,11 +498,12 @@ Planned for Phase 4:
   directory walk.
 - Per-asset validation: a missing/broken optional sheet must not block the main
   window. Implemented via warnings and placeholders.
-- Planned: fuzz `OpenFS`/`OpenBytes` with arbitrary ZIP/BMP input. A malformed
-  skin must never panic or allocate unbounded memory.
-- Ship an original dev skin in `assets/dev-skin/` for first run. Done. Do not
-  commit copyrighted Winamp skins; keep local test skins in a gitignored
-  `skins/`.
+- Implemented: `FuzzSkinOpen` (`internal/skin/fuzz_test.go`) fuzzes `OpenBytes`
+  with arbitrary ZIP/BMP input so malformed skins never panic or allocate
+  unbounded memory.
+- Original dev skin lives in `assets/dev-skin/` for first run. Do not commit
+  copyrighted Winamp skins; keep local test skins in a gitignored `skins/`
+  directory.
 
 ## 7. Audio and playback design
 
@@ -517,14 +566,17 @@ Implemented in Phase 1:
 2. On natural EOF: do not kill. Wait up to two seconds for a normal exit, reap
    the process, and treat a kill after that timeout as teardown rather than a
    playback failure. A non-zero exit code is still reported.
-3. `Game.Close` cancels the context, waits for the playback goroutine, then
+3. `Game.Close` cancels the context, waits for the playback goroutine, flushes
+   debounced `config.json`/`eq.json` savers, deallocates GPU textures, and
    closes the sink. No new ffmpeg process can start after the sink is closed.
-4. A seek will discard the player and create a new pipeline; that is Phase 2.
+4. A seek discards the player and creates a new pipeline (implemented in Phase 2).
+5. On pipe teardown, `ffmpeg.go` returns `io.EOF` rather than `os.ErrClosed`.
 
-For a long pause, Phase 1 keeps the source, process, and connection alive for
-instant resume. `PauseAndStopReading` is deferred to stop/teardown so it cannot
-block the UI thread. Phase 2 can decide whether a long pause should stop and
-reopen instead.
+For pause, the source, process, and connection are kept alive via `Player.Pause()`
+for instant resume, while `PauseAndStopReading` is reserved for stop/teardown so
+it cannot block the UI thread. Phase 6A–6B insert `audio.EQReader` and
+`audio.VisTapReader` in the reader chain inside `EbitenSink.Play` between
+`audio.Source` and `ctx.NewPlayerF32`.
 
 ### 7.4 Seek, EOF, and recovery
 
@@ -550,70 +602,88 @@ All implemented in Phase 2 (`internal/playback`):
 
 ### 8.1 SkinView
 
-Implemented in Phase 1:
+Implemented in Phase 1 and extended in Phases 4–6:
 
-- Upload each decoded sheet to `*ebiten.Image` once on the first `Update` tick,
-  after the graphics context exists. `NewImageFromImage` never runs per frame.
-- Cache `sheet.SubImage(rect)` results per sprite name and precompute all known
-  sprites when the view is built.
-- Check every source rect against the uploaded sheet before `SubImage`. A rect
-  that does not fit is treated as missing; Ebitengine would otherwise clip it to
-  an empty image and hide the bug.
+- Upload each decoded sheet to `*ebiten.Image` once on the first `Update` tick
+  (or after an async skin-picker reload), after the graphics context exists.
+  `NewImageFromImage` never runs per frame. Release prior GPU textures via
+  `View.Deallocate()` on reload and shutdown.
+- Cache `sheet.SubImage(rect)` results per sprite name, precompute all known
+  sprites, 28-frame slider strips (`volFrames`, `balFrames`, `eqFrames`),
+  `EQ_GRAPH_LINE_COLORS`, `text.bmp` glyphs, `pledit.txt` styles, and
+  `viscolor.txt` palettes when the view is built.
+- Check every source rect against the uploaded sheet before `SubImage` (with
+  `balance.bmp` falling back to `volume.bmp`, partial slider backgrounds
+  intersected to sheet bounds, and optional slider thumbs skipped if absent).
+  Otherwise missing/invalid rects become labelled magenta placeholders created
+  once in `skinview.New`, not during `Draw`.
 - Draw at integer coordinates with `FilterNearest`.
-- Missing sprite: draw a magenta box with the sprite name. Known missing
-  placeholders are created once in `skinview.New`, not during `Draw`.
 
 ### 8.2 Immediate-mode widgets
 
-Implement only what the skin needs. Phase 1 has the first two pieces:
+All classic and browser widget primitives are implemented in `internal/ui`:
 
-- **Implemented:** button (play/pause) with normal/pressed sprites; clicks fire
-  on release inside the widget, presses capture the widget, and dragging out
-  cancels. Hot/active IDs are tracked; a press first observed outside a widget
-  does not click it.
-- **Implemented:** fixed logical layout and logical cursor coordinates.
-- **Pending:** toggle (4 sprites), horizontal/vertical slider, scrollbar, list
-  row, text field.
+- **Buttons & toggles:** normal/pressed sprites and 2-/4-state toggles
+  (`SHUF`, `REP`, `EQ`, `PL`, `ON`, `AUTO`, `D` double-size, shade buttons).
+  Clicks fire on release inside the widget; presses capture the widget;
+  dragging out cancels. Hot/active IDs are tracked; a press first observed
+  outside a widget does not click it.
+- **Sliders & scrollbars:** horizontal seek/volume/balance/mini-shade sliders
+  and vertical EQ band/preamp sliders + playlist scrollbar with drag capture and
+  mouse wheel support.
+- **Lists, menus, toasts & text fields:** virtualized playlist/browser rows
+  (click, `Ctrl+Click`, `Shift+Click`, double-click, right-click), `pledit`
+  popup menus (`ADD`/`REM`/`SEL`/`MISC`/`LIST`), dismissible toasts, and a
+  caret/IME-aware `textField` (`exp/textinput.Composer`).
 
-Use stable IDs (hash of `"window.widget"`), hot/active state, and press/release
-semantics. Do not build a full retained widget tree.
+Use stable IDs (e.g. `"main.volume"`, `"eq.band.0"`, `"playlist.row.0"`),
+hot/active state, and press/release semantics without a retained widget tree.
 
 ### 8.3 Windows
 
-- **Implemented:** fixed 275x348 logical canvas stacking the 275x116 main
-  window (active/inactive title bar, transport buttons + Eject) above the
-  275x232 catalog browser panel (`browserPanel`).
-- **Pending (Phase 4B):** skinned playlist (`275x232`) and equalizer (`275x116`)
-  windows in a **docked/stacked Winamp rack** (`Main 275x116`, toggleable `EQ
-  275x116`, toggleable `Playlist/Browser 275x232`), resizing the OS window only
-  on discrete `EQ` / `PL` show/hide toggles rather than dynamically morphing the
-  OS window bounding box during mouse drags (see ADR 0002).
-- Shade mode, arbitrary floating drags, and double-size are Phase 6. Keep all
-  coordinates in 1x logical space and scale only at the draw boundary.
-- Playlist: use `pledit.bmp` frames for top/bottom/scrollbar; virtualize rows;
-  click/shift-click/ctrl-click; double-click to play; wheel and scrollbar.
-- EQ: render `eqmain.bmp` chrome and sliders. Visual-only in Phases 4-5; DSP is
-  optional Phase 6A.
-- Browser/search: implemented as `browserPanel` in Phase 3A; Phase 4/5 can style
-  it from `pledit` colors (or `gen.bmp` if present), with a TTF search
-  field/results and a bitmap-font header.
-- **Implemented:** F1 debug overlay with FPS/TPS, playback state, queue index,
-  position/duration, volume, shuffle/repeat, track ID, cursor/hot/active IDs,
+- **Implemented:** docked/stacked Winamp rack (`Main 275x116`, toggleable `EQ
+  275x116`, toggleable `Playlist/Browser 275x232`) inside one OS window,
+  resizing the OS window only on discrete `EQ` / `PL` / shade / scale changes
+  rather than continuously during mouse drags (see ADR 0002).
+- **Implemented (Phase 6C partial):** WindowShade mode (`14px` collapsed bars
+  via the shade button or titlebar double-click) for Main (mini transport,
+  clock, mini seek), EQ (`eq_ex.bmp` + fallback volume/balance sliders), and
+  Playlist (`pledit.bmp` shade bar + track/duration), persisted in `config.json`,
+  plus the clutter-bar `D` double-size toggle (`1X` <-> `2X`, also `Ctrl+D`).
+  Arbitrary floating drags and `region.txt` polygon masks remain deferred/optional.
+- **Playlist (`internal/ui/playlist.go`):** uses `pledit.bmp` frames for
+  top/bottom/scrollbar and `pledit.txt` colors; virtualizes rows;
+  click/shift-click/ctrl-click; double-click to play; wheel and scrollbar; popup
+  menus + M3U import/export.
+- **EQ (`internal/ui/eq.go`):** renders `eqmain.bmp` chrome, 10 bands + preamp,
+  and response graph; wired live to `audio.EQReader` (Phase 6A) and persisted
+  atomically to `eq.json`.
+- **Visualizer (`internal/ui/vis.go`):** renders `viscolor.txt`-styled 19-bar
+  spectrum analyzer (with falling peaks) and oscilloscope inside
+  `MainVisBounds` (`24, 43, 100, 59`); click to cycle Spectrum -> Oscilloscope
+  -> Off (Phase 6B).
+- **Browser/Settings (`internal/ui/browser.go`, `settings.go`):** `browserPanel`
+  with `SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE` tabs, collection detail
+  drill-down (`<BACK`), caret/IME search input, artwork preview modal, and
+  in-app Settings panel (`SET` / `F2`).
+- **Implemented:** `F1` debug overlay with FPS/TPS, playback state, `eq`/`pl`
+  visibility, queue index/len, position/duration, volume, shuffle/repeat/autoplay,
+  track ID, skin name, missing-sprite count (`miss=%d`), cursor/hot/active IDs,
   sprite destination rects (cyan), and widget hit areas (magenta). Missing
   sprites are labelled on the canvas.
-- **Pending in debug:** skin name, missing-asset list.
 
 ### 8.4 Text and scale
 
-Not implemented in Phase 1. The window is fixed at 1x; Ebitengine reports
-cursor positions in logical pixels, which the input code relies on.
-
-- Bitmap font for main-window chrome and ASCII playlist text; TTF fallback for
-  non-ASCII. Tinting via `ColorScale` works when glyphs are white.
-- Marquee: clip with a subimage of the destination; scroll only when the text
-  exceeds the clip width. Do not allocate a new offscreen image every frame.
-- For 2x mode, keep logical coordinates at 1x and set the window size to 2x.
-  Verify mouse coordinates are logical; if not, divide by the scale.
+- **Implemented:** bitmap `text.bmp` font for main-window marquee/time/shade
+  chrome and ASCII playlist/title rendering, with embedded TTF fallback
+  (`initUITextFace`) for non-ASCII/browser/settings text.
+- **Implemented:** marquee scrolling clips to `MainMarqueeBounds` and scrolls
+  only when text exceeds the clip width, without per-frame offscreen image
+  allocations.
+- **Implemented:** logical coordinates stay fixed at 1x (`275` px wide); display
+  scale is configurable in `0.10x` increments from `1.0x` to `2.0x` in Settings
+  (plus `1X` <-> `2X` toggle via main clutter-bar `D` / `Ctrl+D`) and applied at
+  the window/draw boundary (`ScaledWindowSize`).
 
 ## 9. Catalog, search, and artwork
 
@@ -633,18 +703,22 @@ Implemented in Phase 3A behind `catalog.Catalog`, `catalog.Searcher`, and
   `Enter` submits immediately and cancels prior requests.
 - In-memory TTL caches for search (`10m`) and track metadata (`1h`).
 
-### 9.2 InnerTube `WEB_REMIX` catalog (3B — done)
+### 9.2 InnerTube `WEB_REMIX` catalog (3B — done, extended in 4–5)
 
 - Package `internal/catalog/ytmusic` implements `catalog.Catalog` (`Search`,
-  `Track`, `Playlist`) via pure-Go HTTP POST requests to YouTube Music
-  InnerTube endpoints (`https://music.youtube.com/youtubei/v1/search`, `next`,
-  `browse`) using the `WEB_REMIX` client context, `DefaultMaxResponseBytes`
-  (`16 MiB`), `10m` search TTL cache, and `1h` track metadata cache.
+  `Track`, `Playlist`), `catalog.RadioProvider` (`Related` via unauthenticated
+  `RDAMVM...` Up Next seeds), and `catalog.TabCatalog` (`SONGS`, `PLAYLST`,
+  `ALBUMS`, `ARTISTS`, plus playlist/album/artist detail browsing) via pure-Go
+  HTTP POST requests to YouTube Music InnerTube endpoints
+  (`https://music.youtube.com/youtubei/v1/search`, `next`, `browse`) using the
+  `WEB_REMIX` client context, `DefaultMaxResponseBytes` (`16 MiB`), `10m`
+  search TTL cache, and `1h` track metadata cache.
 - Handles `VL...` / `PL...` / `OLAK5uy_...` / `MPREb_...` / `RDCLAK5uy_...`
   playlists and albums (inheriting album header metadata/artwork when track rows
   omit them and falling back to `/next` when `/browse` yields no items).
 - Keeps `internal/ytdlp` (`yt-dlp -g`) as the stream URL resolver so signature and
-  cipher churn remain isolated in `yt-dlp`.
+  cipher churn remain isolated in `yt-dlp`, with `yt:` / `ytdlp:` prefix
+  routing to `catalog/ytdlp` for videos outside YouTube Music.
 - Added `-catalog ytmusic|ytdlp` (default `ytmusic`) in both `cmd/ytm-wmp` and
   `cmd/ytmctl`.
 - No account/auth/cookies in v1.
@@ -652,31 +726,40 @@ Implemented in Phase 3A behind `catalog.Catalog`, `catalog.Searcher`, and
   `internal/catalog/ytmusic/testdata/`, with live InnerTube tests gated behind
   `YTM_LIVE=1` / `YTM_WMP_LIVE_TEST=1`.
 
-### 9.3 Artwork (3A — done)
+### 9.3 Artwork (3A — done, cache management added in 5)
 
 - Picks thumbnail closest to `360px` (preferring non-WebP on ties), falling back
-  to `model.DefaultThumbnailURL`; fetches with a `10s` timeout and `ytm-wmp/0.1`
-  User-Agent.
+  to `model.DefaultThumbnailURL`; fetches with a `10s` timeout and
+  `github.com/rroy-ar/ytm-wmp/0.1` User-Agent.
 - Decodes JPEG, PNG, and WebP (`golang.org/x/image/webp`).
 - Resizes to list (`64x64`) and now-playing (`300x300`) sizes with
   `golang.org/x/image/draw` (`ApproxBiLinear`), plus `artwork.Placeholder`.
-- Caches original bytes atomically on disk by video ID (`os.UserCacheDir()/ytm-wmp/artwork`)
-  and decoded `Bundle`s in a 64-entry in-memory LRU with single-flight dedup.
+- Caches original bytes atomically on disk by video ID (`os.UserCacheDir()/ytm-wmp/artwork`,
+  configurable via `CacheDir`) and decoded `Bundle`s in a 64-entry in-memory
+  LRU with single-flight dedup. Supports `Stats`, `PruneDisk(maxBytes)` (run
+  at startup when `CacheMaxMB > 0` and from Settings), and `ClearDisk`.
 - Never fetches, decodes, or allocates GPU textures inside `Draw()`; `64x64`
   textures upload inside `Update()`, `300x300` textures upload lazily when the
   modal opens, and evicted/closed textures call `Deallocate()`.
 
 ## 10. Persistence
 
-Implemented in Phase 5 (`internal/store`):
+Implemented in Phase 5 (`internal/store`) and extended with `Shaded` in Phase 6C:
 
 ```go
+type WindowState struct {
+    Visible bool
+    Shaded  bool
+    X       int
+    Y       int
+}
+
 type Config struct {
     Version       int
     Skin          string
     Volume        float64
     Balance       float64
-    Scale         int
+    Scale         float64 // [1.0, 2.0] rounded to 0.10 increments
     BufferMs      int
     CacheDir      string
     CacheMaxMB    int
@@ -693,23 +776,27 @@ type Config struct {
 }
 ```
 
-- Location: `os.UserConfigDir()/ytm-wmp/config.json`; cache/artwork under
+- Location: `os.UserConfigDir()/ytm-wmp/config.json` (plus `eq.json` and
+  `playlist.m3u` in the same directory); cache/artwork under
   `os.UserCacheDir()/ytm-wmp/`.
 - Atomic write: `store.AtomicWriteFile` writes to a temp file in the same
   directory, `Sync`, `Close`, and `Rename` (with Windows replace fallback).
-  Reused by both `config.json` and `eq.json`/`playlist.m3u` saves.
+  Reused by `config.json`, `eq.json`, and `playlist.m3u` saves.
 - Debounced writes (`500 ms` via `store.DebouncedSaver`) and immediate flush on
   `Game.Close()`. Never writes per frame.
 - `TrackRef` stores normalized video IDs and display metadata, stripping signed
   stream URLs (`googlevideo.com`) and never storing cookies.
-- Schema versioned (`CurrentVersion = 1`) with `Migrate` + `Sanitize` (clamping
-  volume/balance/scale/buffer/queue index and rejecting future versions).
+- Schema versioned (`CurrentVersion = 1`) with `Migrate` + `Sanitize` /
+  `SanitizeScale` (clamping volume/balance/scale/buffer/queue index and
+  rejecting future versions).
 
 ## 11. Phases
 
 Sizes are relative: S = a few sessions, M = about a week of evenings, L =
 multiple weeks. The critical path is 0 -> 1 -> 2 -> 3A -> 3B -> 4 -> 5 -> 7.
-Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are complete; Phase 4 is next.
+Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, 4, 5, 6A, 6B, and 6C (partial) are
+complete; remaining optional Phase 6 chunks (`region.txt`, 6D–6E) and Phase 7
+are next.
 
 | Phase | Outcome | Size | Status |
 |-------|---------|------|--------|
@@ -720,7 +807,7 @@ Phases 0, 1, 2, 3A, 3.5 cleanup, and 3B are complete; Phase 4 is next.
 | 3B | Pure-Go YTM InnerTube `WEB_REMIX` catalog backend | S-M | done |
 | 4 | Complete classic skin system | L | done |
 | 5 | Full player UX and persistence | L | done |
-| 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | optional |
+| 6 | Fidelity: EQ DSP, visualizer, shade/region (optional) | L | in progress (6A, 6B, 6C partial done; 6C `region.txt`, 6D–6E optional) |
 | 7 | Hardening and v0.1 release | M | planned |
 
 ### Phase 0 — Baseline and seams (done)
@@ -904,8 +991,9 @@ corpus visual check (kept out of git).
 **4A. Parser and main-window renderer**
 
 - Loader hardening (ZIP/dir, names, modern rejection, caps, alpha, optional
-  assets) already landed in Phase 1. Remaining: fuzzing, a real skin corpus, and
-  any 1/4/16-bpp fallback the corpus proves necessary.
+  assets) already landed in Phase 1; `OpenBytes`/`OpenFS` and `FuzzSkinOpen`
+  landed in Phase 4. Remaining: external multi-skin corpus check and any
+  1/4/16-bpp fallback the corpus proves necessary.
 - Port the full Webamp sprite table.
 - Bitmap text, marquee, time digits, stereo indicator, position bar, volume,
   balance, shuffle/repeat, EQ/PL toggles.
@@ -1029,49 +1117,64 @@ limitations documented.
 |------|--------|------------|
 | Ebitengine audio + live pipe teardown deadlocks/races | High | Phase 1 spike passed; close/kill the source before `PauseAndStopReading`; natural EOF waits for exit; fake-process + live shutdown tests; `-race` |
 | `PauseAndStopReading` blocks on a stalled read | High | Close/kill ffmpeg first; close the pipe; two-second EOF reap timeout; still add a fake stalled-reader test |
-| Paused session holds ffmpeg and the network connection | Medium | Deliberate for instant resume in Phase 1; Phase 2 decides whether long pauses stop and reopen |
+| Paused session holds ffmpeg and the network connection | Medium | Deliberate for instant resume (kept in Phase 2+) |
 | YouTube/yt-dlp changes break playback | High | Cache by video ID; one stale retry; version check; clear update message; keep catalog/resolver boundaries |
 | InnerTube API fragility | High | Public yt-dlp path first; wrap third-party clients; yt-dlp fallback for streams |
 | Skin incompatibility / BMP bit depths | Medium | Webamp sprite table; corpus-driven fallbacks; per-asset warnings/placeholders; fuzz loader |
 | Alpha quirks in 32-bit BMPs | Medium | All-zero alpha -> opaque; test fixtures |
 | Text/Unicode in bitmap skins | Medium | Bitmap chrome + TTF fallback; explicit `?` last resort |
 | One-window limitation | Medium | Decide early; internal windows + snapping; document; transparent-canvas experiment only after v1 |
-| Scope creep (EQ/visualizer/gapless/account) | High | v1 checklist; Phase 6 optional; ship Phase 4/5 first |
+| Scope creep (EQ/visualizer/gapless/account) | High | v1 checklist; Phase 6 modular chunks (6A–6C partial shipped after v1 core); gapless/MPRIS/account still deferred |
 | Cgo / X11 & GL build deps | Medium | Linux only (Windows/macOS out of scope); document X11/GL dev deps |
 | Legal/ToS | Medium | No bundled skins/content; personal-use docs; don't log/redistribute streams |
 | External tools in sandboxes | Medium | Startup checks; configurable paths; Flatpak notes |
 
 ## 13. Testing and instrumentation
 
-### Current coverage (after Phase 3B)
+### Current coverage (after Phase 6C partial)
 
-- **Model & yt-dlp:** `VideoID`/`IsVideoID`/`NormalizeTrackID`/`DefaultThumbnailURL`
+- **Model, deps & yt-dlp:** `VideoID`/`IsVideoID`/`NormalizeTrackID`/`DefaultThumbnailURL`
   table-driven tests, 5h URL cache expiry, stale-URL `Forget`, bounded stdout/stderr
   subprocess caps (`ExecRunner`), `ffmpeg` argument construction, zero-frame
-  classification, and dependency discovery.
+  classification, and `deps.Check`/`deps.CheckPath` discovery.
 - **Catalog & artwork:** `catalog.IsPlaylistTarget` (playlist URLs/IDs, `/browse/...`,
   `VL...`, `MPREb_...`, `RDCLAK5uy_...`), debounced/generation-tagged
   `catalog.Searcher` cancellation, `internal/catalog/ytdlp` offline JSON fixture
   tests (`search`, `track`, `playlist`, stdout cap), `internal/catalog/ytmusic`
-  offline `WEB_REMIX` JSON fixture tests (`search`, `next`, `browse`, caching,
-  max response bytes, empty/not-found errors), `internal/artwork`
-  JPEG/PNG/WebP decode/resize/disk+LRU cache/single-flight tests, and
-  `cmd/ytmctl` / `cmd/ytm-wmp` `-catalog` flag selection tests.
+  offline `WEB_REMIX` JSON fixture tests (`search`, `next`, `browse`, radio,
+  tab search, collection/artist detail, caching, max response bytes, empty/not-found
+  errors), `internal/artwork` JPEG/PNG/WebP decode/resize/disk+LRU cache/prune/stats/
+  single-flight tests, and `cmd/ytmctl` / `cmd/ytm-wmp` `-catalog` / startup queue tests.
+- **Persistence & M3U:** `internal/m3u` `#EXTM3U` parse/format tests and
+  `internal/store` `config.json` v1 `Load`/`Migrate`/`Sanitize`/`SanitizeScale`,
+  `WindowState.Shaded`, `TrackRef`, `DebouncedSaver`, and `AtomicWriteFile` tests.
 - **Playback:** queue navigation/history/non-repeating shuffle bag/repeat modes,
-  `UpdateTrack` enrichment, zero-copy read-only `Snapshot.Queue`, seek-by-reopen,
-  URL prefetching, stale-URL retry, error taxonomy, and 20-track-change goroutine
-  leak check.
-- **Skin loader:** directory and `.wsz`/`.zip` loading, backslashes/nested
-  paths, duplicate rejection, modern-skin rejection, broken/oversized BMPs,
-  total byte/pixel budgets, symlinked directories, ZIP traversal, RGBA/NRGBA
-  alpha, sprite definitions, and the dev-skin asset dimensions.
+  `RemoveIndices`, `MoveTrack`, `SortQueue`, `UpdateTrack` enrichment, zero-copy
+  read-only `Snapshot.Queue`, seek-by-reopen, URL prefetching, `RadioProvider`
+  queue-end autoplay, stale-URL retry, error taxonomy, and 20-track-change
+  goroutine leak check.
+- **Skin loader & skinview:** directory and `.wsz`/`.zip`/`OpenBytes`/`OpenFS`
+  loading, backslashes/nested paths, duplicate rejection, modern-skin rejection,
+  broken/oversized BMPs, total byte/pixel budgets, symlinked directories, ZIP
+  traversal, RGBA/NRGBA alpha, `pledit.txt`/`viscolor.txt`, sprite definitions,
+  `assets/dev-skin/` dimensions (including Phase 4 + Phase 6C `eq_ex.bmp`/shade),
+  `FuzzSkinOpen` fuzz target, plus `skinview` partial slider sheet / missing
+  `balance.bmp` / optional thumb / `Deallocate()` tests.
 - **UI:** press/release/cancel/drag behavior, topmost hit testing, named layout
-  bounds, `browserPanel` search/playlist/queue actions, retryable/queue-aware
-  enrichment, bounded 4-worker concurrency, lazy `300x300` texture upload +
-  `Deallocate()`, play/pause/resume/error/shutdown state, first-Update
-  initialization, draw smoke test, debug wrapping, and texture cache/placeholders.
+  bounds, docked Winamp rack (`Main`/`EQ`/`Playlist`/`Browser`) + shade/double-size
+  (`D` / `Ctrl+D`) geometry and persistence, skinned playlist rows/selection/menus/M3U,
+  EQ window + presets + live `SetEQ` DSP wiring, visualizer spectrum/oscilloscope
+  modes and decay, `browserPanel` tabs (`SONGS`/`PLAYLST`/`ALBUMS`/`ARTISTS`/`QUEUE`),
+  detail drill-down, right-click/direct collection queueing, `ALL->Q` append,
+  retryable/queue-aware enrichment, bounded 4-worker concurrency, lazy `300x300`
+  texture upload + `Deallocate()`, caret/IME `textField`, clipboard/skinpicker
+  selection, toasts, Settings panel (`0.10x` scale, buffer, cache prune/clear,
+  tool paths), debug wrapping, and draw smoke tests.
 - **Audio:** f32le format contract, sink lifecycle, pause/resume, pause during
-  resolve, teardown ordering, clean EOF vs. nonzero exit, and explicit kill.
+  resolve, teardown ordering, clean EOF (`io.EOF` on pipe teardown) vs. nonzero exit,
+  explicit kill, 10-band biquad `EQReader` (peaking filters, preamp, bypass,
+  clipping), `VisRing`/`VisTapReader`/`ComputeSpectrum` FFT analyzer, and
+  `EbitenSink` EQ/vis wiring.
 - **Opt-in live tests:** `YTM_WMP_LIVE_TEST=1` in `internal/playback` and
   `YTM_LIVE=1` in `internal/catalog/ytdlp` and `internal/catalog/ytmusic`.
 - `go test -race ./...` and `go vet ./...` pass. Building Ebitengine tests
@@ -1080,17 +1183,18 @@ limitations documented.
 ### Testing pyramid
 
 1. **Pure unit tests:** skin parser, sprite table, text lookup, queue logic,
-   state transitions, config serialization. Fast, run in CI.
+   state transitions, config serialization, M3U, EQ biquads, FFT spectrum. Fast,
+   run in CI.
 2. **Fake-process integration:** replace yt-dlp/ffmpeg with Go fakes or tiny
    scripts emitting known JSON/PCM. Tests args, errors, and teardown without
-   network. Phase 0/1 already use this for playback and ffmpeg lifecycle.
-3. **Opt-in live tests:** real yt-dlp + ffmpeg behind `YTM_LIVE=1`. CI never
-   depends on YouTube. Not yet implemented.
+   network.
+3. **Opt-in live tests:** real yt-dlp + ffmpeg behind `YTM_LIVE=1` /
+   `YTM_WMP_LIVE_TEST=1` (implemented; skipped in offline CI).
 4. **Visual tests:** render a skin to a screenshot with Xvfb where possible;
    otherwise a manual corpus checklist. Not yet implemented.
-5. **Audio tests:** fake source with silence/sine; assert frame counts and state
-   transitions, not sound quality. Current tests use fake sources and real
-   short-lived fake processes.
+5. **Audio tests:** fake source with silence/sine; assert frame counts, EQ gain
+   response, FFT peaks, and state transitions. Current tests use fake sources
+   and real short-lived fake processes.
 
 ### Commands
 
@@ -1101,7 +1205,6 @@ go vet ./...
 gofmt -l .
 go build ./...
 
-# Planned once the fuzz/live fixtures exist:
 go test -fuzz=FuzzSkinOpen ./internal/skin -fuzztime=30s
 YTM_LIVE=1 go test ./internal/catalog/ytdlp -run Live
 YTM_LIVE=1 go test ./internal/catalog/ytmusic -run Live
@@ -1113,10 +1216,11 @@ YTM_LIVE=1 go test ./internal/catalog/ytmusic -run Live
 - Current debug logs: playback start/finish, sink cancellation/source done with
   frame counts, skin warnings, dependency versions, skin sheets.
 - Ring buffer of ffmpeg stderr per stream. Implemented.
-- Debug overlay: FPS/TPS, play/pause state, cursor, sprite rects, and hit areas.
-  Implemented; queue index/position/skin name/missing-asset list are pending.
-- Log spans for resolve/open/first PCM/seek/teardown. Only start/finish and
-  teardown frame counts exist today.
+- Debug overlay (`F1`): FPS/TPS, playback state, `eq`/`pl` toggles, queue index,
+  position/duration, volume, shuffle/repeat/autoplay, track ID, skin name,
+  missing-sprite count, cursor, sprite rects, and hit areas. Implemented.
+- Log spans for resolve/open/first PCM/seek/teardown. Start/finish,
+  `first_pcm_ms`, and teardown frame counts exist today.
 - Never log signed URLs, cookies, or auth headers. Implemented for stream URLs
   in stderr and for playback targets.
 
@@ -1135,9 +1239,26 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `91d1825` docs: record Phase 6C shade mode and double-size D button
 - `698e468` feat(ui): implement shade mode and clutter-bar double-size D button
 - `3f206eb` feat(assets): add shade mode and clutter bar sprites to dev-skin
 - `d5c79a8` feat(store): persist window shaded state in config.json
+- `0fc37fa` fix(skinview,ui): handle partial slider sheets, missing balance.bmp, and optional thumbs
+- `2560d9b` docs: mark Phase 6A EQ DSP and Phase 6B visualizer complete
+- `5628388` feat(ui): wire live EQ DSP and add spectrum/oscilloscope visualizer
+- `bfc0c39` feat(audio): wire EQ DSP and visualizer tap into EbitenSink
+- `ba6808c` feat(audio): add PCM visualizer ring buffer tap and FFT analyzer
+- `3427548` feat(audio): add 10-band biquad EQ DSP reader and tests
+- `73de576` feat(ui): press Esc to close catalog browser
+- `e1c1655` feat(ui): right-click catalog rows to queue and document controls
+- `ae4939f` docs: mark Windows and macOS compilation out of scope (Linux only)
+- `8faa3e8` chore: update module path to github.com/rroy-ar/ytm-wmp and remove open questions
+- `d1f6b90` feat(ui): allow queueing albums and collections without opening detail view
+- `f47d414` fix(ui): append tracks to queue on ALL->Q instead of replacing
+- `054d913` fix(audio): return io.EOF instead of os.ErrClosed on pipe teardown
+- `c005283` feat(ui): support 0.10x display scale increments from 1x to 2x
+- `8cd48dc` fix(ui): remove SEARCH button from playlist titlebar
+- `e6298f6` docs: record Phase 5 completion in AGENTS.md, README, and plan
 - `48a4eeb` feat(ui,cmd): wire config.json persistence, cold-start restore, and graceful startup
 - `a8ec50d` feat(ui): add error toasts, dependency alerts, and settings panel
 - `11fb3de` feat(ui,playback): add IME text field, browser tabs, detail views, and queue tab
@@ -1193,5 +1314,6 @@ Recent trail as of this update (newest first):
 - `1858514` refactor: land phase 0 architecture seams
 
 Next up is Phase 7 (hardening, multi-skin corpus smoke testing, performance
-profiling, and Linux CI for `v0.1`), with optional Phase 6 fidelity
-chunks (EQ DSP, spectrum visualizer, shade/`region.txt`, MPRIS).
+profiling, and Linux CI for `v0.1`), plus remaining optional Phase 6 fidelity
+chunks (`region.txt` polygon masks in 6C, 6D skin browser/cursors, and 6E
+gapless/MPRIS/media keys).

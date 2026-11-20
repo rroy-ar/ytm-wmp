@@ -35,8 +35,9 @@ func TestDefaultConfigAndRoundTrip(t *testing.T) {
 	cfg.BufferMs = 200
 	cfg.CacheDir = "/tmp/art"
 	cfg.CacheMaxMB = 128
-	cfg.Windows[WindowEQ] = WindowState{Visible: true}
-	cfg.Windows[WindowPlaylist] = WindowState{Visible: false}
+	cfg.Windows[WindowMain] = WindowState{Visible: true, Shaded: true}
+	cfg.Windows[WindowEQ] = WindowState{Visible: true, Shaded: true}
+	cfg.Windows[WindowPlaylist] = WindowState{Visible: false, Shaded: true}
 	cfg.BrowserMode = true
 	cfg.TimeRemaining = true
 	cfg.Shuffle = true
@@ -83,7 +84,7 @@ func TestDefaultConfigAndRoundTrip(t *testing.T) {
 	if loaded.BufferMs != 200 || loaded.CacheDir != "/tmp/art" || loaded.CacheMaxMB != 128 {
 		t.Fatalf("loaded cache/buffer mismatch: %+v", loaded)
 	}
-	if !loaded.Windows[WindowEQ].Visible || loaded.Windows[WindowPlaylist].Visible {
+	if !loaded.Windows[WindowMain].Shaded || !loaded.Windows[WindowEQ].Visible || !loaded.Windows[WindowEQ].Shaded || loaded.Windows[WindowPlaylist].Visible || !loaded.Windows[WindowPlaylist].Shaded {
 		t.Fatalf("loaded windows = %+v", loaded.Windows)
 	}
 	if !loaded.BrowserMode || !loaded.TimeRemaining || !loaded.Shuffle || loaded.Repeat != RepeatAll || loaded.Autoplay {

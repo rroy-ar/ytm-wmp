@@ -42,9 +42,10 @@ const (
 // ErrUnsupportedVersion indicates config.json was written by a newer schema.
 var ErrUnsupportedVersion = errors.New("unsupported config schema version")
 
-// WindowState records visibility and optional coordinates for a rack panel.
+// WindowState records visibility, shade state, and optional coordinates for a rack panel.
 type WindowState struct {
 	Visible bool `json:"visible"`
+	Shaded  bool `json:"shaded,omitempty"`
 	X       int  `json:"x,omitempty"`
 	Y       int  `json:"y,omitempty"`
 }

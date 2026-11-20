@@ -197,6 +197,12 @@ func TestInitialCanvasHeightAndRepeatMode(t *testing.T) {
 	if h := initialCanvasHeight(cfg); h != ui.MainWindowHeight+ui.EQWindowHeight+ui.PlaylistHeight {
 		t.Fatalf("with EQ height = %d", h)
 	}
+	cfg.Windows[store.WindowMain] = store.WindowState{Visible: true, Shaded: true}
+	cfg.Windows[store.WindowEQ] = store.WindowState{Visible: true, Shaded: true}
+	cfg.Windows[store.WindowPlaylist] = store.WindowState{Visible: true, Shaded: true}
+	if h := initialCanvasHeight(cfg); h != 3*ui.ShadeWindowHeight {
+		t.Fatalf("all shaded height = %d, want %d", h, 3*ui.ShadeWindowHeight)
+	}
 	if parseRepeatMode("all") != playback.RepeatAll || parseRepeatMode("one") != playback.RepeatOne || parseRepeatMode("off") != playback.RepeatOff {
 		t.Fatal("parseRepeatMode mismatch")
 	}

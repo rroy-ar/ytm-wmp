@@ -594,6 +594,7 @@ func (g *Game) requestArtwork(tr model.Track) {
 
 func (g *Game) focusSearch() {
 	g.hidePL = false
+	g.shadePL = false
 	g.browserMode = true
 	g.showSettings = false
 	g.plMenu = plMenuNone

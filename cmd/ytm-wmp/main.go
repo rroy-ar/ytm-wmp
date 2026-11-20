@@ -329,11 +329,22 @@ func parseRepeatMode(s string) playback.RepeatMode {
 
 func initialCanvasHeight(cfg store.Config) int {
 	h := ui.MainWindowHeight
+	if cfg.Windows[store.WindowMain].Shaded {
+		h = ui.ShadeWindowHeight
+	}
 	if cfg.Windows[store.WindowEQ].Visible {
-		h += ui.EQWindowHeight
+		if cfg.Windows[store.WindowEQ].Shaded {
+			h += ui.ShadeWindowHeight
+		} else {
+			h += ui.EQWindowHeight
+		}
 	}
 	if cfg.Windows[store.WindowPlaylist].Visible {
-		h += ui.PlaylistHeight
+		if cfg.Windows[store.WindowPlaylist].Shaded {
+			h += ui.ShadeWindowHeight
+		} else {
+			h += ui.PlaylistHeight
+		}
 	}
 	return h
 }

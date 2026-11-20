@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/rroy-ar/ytm-wmp/internal/audio"
+	"github.com/rroy-ar/ytm-wmp/internal/playback"
 	"github.com/rroy-ar/ytm-wmp/internal/skin"
 	"github.com/rroy-ar/ytm-wmp/internal/store"
 )
@@ -52,10 +54,11 @@ type eqPanel struct {
 	eqBands     [10]float64
 	eqPresetIdx int
 
-	eqPath     string
-	eqDirty    bool
-	eqSaveAt   time.Time
-	eqDragBand int // -1 none, 0..9 band, 10 preamp
+	eqPath      string
+	eqDirty     bool
+	eqSaveAt    time.Time
+	eqDragBand  int // -1 none, 0..9 band, 10 preamp
+	eqShadeDrag string
 }
 
 func (g *Game) initEQ() {
@@ -149,6 +152,7 @@ func clampEQVal(v float64) float64 {
 
 func eqWidgetsAt(topY int) []Widget {
 	widgets := []Widget{
+		{ID: WidgetEQShade, Bounds: image.Rect(254, topY+3, 263, topY+12)},
 		{ID: WidgetEQClose, Bounds: image.Rect(264, topY+3, 273, topY+12)},
 		{ID: WidgetEQOn, Bounds: image.Rect(14, topY+18, 40, topY+30)},
 		{ID: WidgetEQAuto, Bounds: image.Rect(40, topY+18, 72, topY+30)},
@@ -165,6 +169,55 @@ func eqWidgetsAt(topY int) []Widget {
 		})
 	}
 	return widgets
+}
+
+func eqShadeWidgetsAt(topY int) []Widget {
+	return []Widget{
+		{ID: WidgetEQShadeVol, Bounds: image.Rect(61, topY+4, 158, topY+11)},
+		{ID: WidgetEQShadeBal, Bounds: image.Rect(164, topY+4, 206, topY+11)},
+		{ID: WidgetEQShade, Bounds: image.Rect(254, topY+3, 263, topY+12)},
+		{ID: WidgetEQClose, Bounds: image.Rect(264, topY+3, 273, topY+12)},
+	}
+}
+
+func (g *Game) updateEQShadeDrag(cx int, pressed bool) {
+	if !pressed {
+		g.eqShadeDrag = ""
+		return
+	}
+	if g.eqShadeDrag == "" {
+		switch g.pointer.Active() {
+		case WidgetEQShadeVol, WidgetEQShadeBal:
+			g.eqShadeDrag = g.pointer.Active()
+		}
+	}
+	switch g.eqShadeDrag {
+	case WidgetEQShadeVol:
+		vol := sliderRatioX(cx, image.Rect(61, 0, 158, 14), 3)
+		g.setTransientStatus(fmt.Sprintf("VOLUME: %d%%", int(math.Round(vol*100))))
+		if g.ctrl != nil && math.Abs(vol-g.snap.Volume) > 0.005 {
+			g.ctrl.Send(playback.SetVolume{Volume: vol})
+			g.markConfigDirty()
+		}
+	case WidgetEQShadeBal:
+		ratio := sliderRatioX(cx, image.Rect(164, 0, 206, 14), 3)
+		bal := ratio*2.0 - 1.0
+		if math.Abs(bal) < 0.06 {
+			bal = 0
+		}
+		if math.Abs(g.balance-bal) > 0.005 {
+			g.markConfigDirty()
+		}
+		g.balance = bal
+		switch {
+		case bal == 0:
+			g.setTransientStatus("BALANCE: CENTER")
+		case bal < 0:
+			g.setTransientStatus(fmt.Sprintf("BALANCE: %d%% LEFT", int(math.Round(-bal*100))))
+		default:
+			g.setTransientStatus(fmt.Sprintf("BALANCE: %d%% RIGHT", int(math.Round(bal*100))))
+		}
+	}
 }
 
 func (g *Game) updateEQDrag(topY, cy int, pressed bool) {
@@ -211,6 +264,13 @@ func (g *Game) updateEQDrag(topY, cy int, pressed bool) {
 
 func (g *Game) onEQClick(id string) bool {
 	switch id {
+	case WidgetEQShade:
+		g.shadeEQ = !g.shadeEQ
+		g.eqDragBand = -1
+		g.eqShadeDrag = ""
+		g.syncWindowSize()
+		g.markConfigDirty()
+		return true
 	case WidgetEQClose:
 		g.showEQ = false
 		g.syncWindowSize()
@@ -270,6 +330,14 @@ func (g *Game) drawEQ(screen *ebiten.Image, topY int) {
 		titleSprite = skin.EQTitleBarSelected
 	}
 	g.drawSprite(screen, titleSprite, image.Pt(0, topY))
+
+	if g.pointer.Active() == WidgetEQShade && g.pointer.Pressed() {
+		if g.view.HasSprite(skin.EQMinimizeButtonActive) {
+			g.drawSprite(screen, skin.EQMinimizeButtonActive, image.Pt(254, topY+3))
+		} else {
+			vector.DrawFilledRect(screen, 254, float32(topY+3), 9, 9, color.RGBA{A: 0x48}, false)
+		}
+	}
 
 	closePressed := g.pointer.Active() == WidgetEQClose && g.pointer.Pressed()
 	closeSprite := buttonSprite(skin.EQCloseButton, skin.EQCloseButtonActive, closePressed)
@@ -341,4 +409,81 @@ func (g *Game) drawEQGraph(screen *ebiten.Image, x, y int) {
 		col := g.view.EQGraphColor(row)
 		vector.DrawFilledRect(screen, px, py, 1.5, 1.5, color.RGBA{R: col.R, G: col.G, B: col.B, A: 0xff}, false)
 	}
+}
+
+func (g *Game) drawEQShade(screen *ebiten.Image, topY int) {
+	if g.view == nil {
+		return
+	}
+	focused := g.focusedPanel == panelEQ && ebiten.IsFocused()
+	volFrac := clampUnit(g.snap.Volume)
+	volThumbX := 61 + int(math.Round(volFrac*float64(97-3)))
+	balFrac := clampUnit((g.balance + 1.0) / 2.0)
+	balThumbX := 164 + int(math.Round(balFrac*float64(42-3)))
+
+	if g.view.HasSprite(skin.EQShadeBg) && g.view.HasSprite(skin.EQShadeBgSelected) {
+		bgSprite := skin.EQShadeBg
+		if focused {
+			bgSprite = skin.EQShadeBgSelected
+		}
+		g.drawSprite(screen, bgSprite, image.Pt(0, topY))
+
+		volSprite := skin.EQShadeVolSliderCenter
+		switch {
+		case volFrac < 0.33 && g.view.HasSprite(skin.EQShadeVolSliderLeft):
+			volSprite = skin.EQShadeVolSliderLeft
+		case volFrac > 0.67 && g.view.HasSprite(skin.EQShadeVolSliderRight):
+			volSprite = skin.EQShadeVolSliderRight
+		}
+		if g.view.HasSprite(volSprite) {
+			g.drawSprite(screen, volSprite, image.Pt(volThumbX, topY+4))
+		}
+
+		balSprite := skin.EQShadeBalSliderCenter
+		switch {
+		case g.balance < -0.15 && g.view.HasSprite(skin.EQShadeBalSliderLeft):
+			balSprite = skin.EQShadeBalSliderLeft
+		case g.balance > 0.15 && g.view.HasSprite(skin.EQShadeBalSliderRight):
+			balSprite = skin.EQShadeBalSliderRight
+		}
+		if g.view.HasSprite(balSprite) {
+			g.drawSprite(screen, balSprite, image.Pt(balThumbX, topY+4))
+		}
+
+		if g.pointer.Active() == WidgetEQShade && g.pointer.Pressed() && g.view.HasSprite(skin.EQMaximizeButtonActive) {
+			g.drawSprite(screen, skin.EQMaximizeButtonActive, image.Pt(254, topY+3))
+		}
+		closePressed := g.pointer.Active() == WidgetEQClose && g.pointer.Pressed()
+		if closePressed && g.view.HasSprite(skin.EQShadeCloseActive) {
+			g.drawSprite(screen, skin.EQShadeCloseActive, image.Pt(264, topY+3))
+		} else if !closePressed && g.view.HasSprite(skin.EQShadeCloseButton) {
+			g.drawSprite(screen, skin.EQShadeCloseButton, image.Pt(264, topY+3))
+		}
+		return
+	}
+
+	// Fallback for classic skins that omit eq_ex.bmp.
+	titleSprite := skin.EQTitleBar
+	if focused {
+		titleSprite = skin.EQTitleBarSelected
+	}
+	g.drawSprite(screen, titleSprite, image.Pt(0, topY))
+
+	trackCol := color.RGBA{R: 0x0c, G: 0x0f, B: 0x14, A: 0xff}
+	thumbCol := color.RGBA{R: 0x38, G: 0xc0, B: 0x70, A: 0xff}
+	vector.DrawFilledRect(screen, 61, float32(topY+4), 97, 7, trackCol, false)
+	vector.DrawFilledRect(screen, float32(volThumbX), float32(topY+4), 3, 7, thumbCol, false)
+	vector.DrawFilledRect(screen, 164, float32(topY+4), 42, 7, trackCol, false)
+	vector.DrawFilledRect(screen, float32(balThumbX), float32(topY+4), 3, 7, thumbCol, false)
+
+	if g.pointer.Active() == WidgetEQShade && g.pointer.Pressed() {
+		if g.view.HasSprite(skin.EQMaximizeFallback) {
+			g.drawSprite(screen, skin.EQMaximizeFallback, image.Pt(254, topY+3))
+		} else {
+			vector.DrawFilledRect(screen, 254, float32(topY+3), 9, 9, color.RGBA{A: 0x48}, false)
+		}
+	}
+	closePressed := g.pointer.Active() == WidgetEQClose && g.pointer.Pressed()
+	closeSprite := buttonSprite(skin.EQCloseButton, skin.EQCloseButtonActive, closePressed)
+	g.drawSprite(screen, closeSprite, image.Pt(264, topY+3))
 }

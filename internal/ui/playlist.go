@@ -108,6 +108,7 @@ func (g *Game) setPlaylistStatus(msg string) {
 
 func playlistWidgetsAt(topY int, activeMenu playlistMenuKind) []Widget {
 	widgets := []Widget{
+		{ID: WidgetPlaylistShade, Bounds: image.Rect(254, topY+3, 263, topY+12)},
 		{ID: WidgetPlaylistClose, Bounds: image.Rect(264, topY+3, 273, topY+12)},
 		{ID: WidgetPlaylistScrollbar, Bounds: image.Rect(255, topY+20, 275, topY+194)},
 		{ID: WidgetPlaylistAdd, Bounds: image.Rect(14, topY+202, 36, topY+220)},
@@ -145,6 +146,13 @@ func playlistWidgetsAt(topY int, activeMenu playlistMenuKind) []Widget {
 		}
 	}
 	return widgets
+}
+
+func playlistShadeWidgetsAt(topY int) []Widget {
+	return []Widget{
+		{ID: WidgetPlaylistShade, Bounds: image.Rect(254, topY+3, 263, topY+12)},
+		{ID: WidgetPlaylistClose, Bounds: image.Rect(264, topY+3, 273, topY+12)},
+	}
 }
 
 func (g *Game) updatePlaylist(topY, cx, cy int, pressed bool) {
@@ -234,6 +242,12 @@ func (g *Game) onPlaylistClick(id string) bool {
 	}
 
 	switch id {
+	case WidgetPlaylistShade:
+		g.plMenu = plMenuNone
+		g.shadePL = !g.shadePL
+		g.syncWindowSize()
+		g.markConfigDirty()
+		return true
 	case WidgetPlaylistClose:
 		g.plMenu = plMenuNone
 		g.hidePL = true
@@ -536,6 +550,9 @@ func (g *Game) drawPlaylist(screen *ebiten.Image, topY int) {
 	g.drawSprite(screen, titleBar, image.Pt(87, topY))
 	g.drawSprite(screen, topRight, image.Pt(250, topY))
 
+	if g.pointer.Active() == WidgetPlaylistShade && g.pointer.Pressed() && g.view.HasSprite(skin.PlaylistCollapseSelected) {
+		g.drawSprite(screen, skin.PlaylistCollapseSelected, image.Pt(254, topY+3))
+	}
 	if g.pointer.Active() == WidgetPlaylistClose && g.pointer.Pressed() && g.view.HasSprite(skin.PlaylistCloseSelected) {
 		g.drawSprite(screen, skin.PlaylistCloseSelected, image.Pt(264, topY+3))
 	}
@@ -679,4 +696,52 @@ func (g *Game) playlistSummaryText() string {
 		return fmt.Sprintf("%d TRK %s", len(g.snap.Queue), formatClock(total))
 	}
 	return fmt.Sprintf("%d TRACKS", len(g.snap.Queue))
+}
+
+func (g *Game) drawPlaylistShade(screen *ebiten.Image, topY int) {
+	if g.view == nil {
+		return
+	}
+	style := g.view.PlaylistStyle()
+	focused := g.focusedPanel == panelPlaylist && ebiten.IsFocused()
+
+	g.drawSprite(screen, skin.PlaylistShadeBgLeft, image.Pt(0, topY))
+	for x := 25; x < 225; x += 25 {
+		g.drawSprite(screen, skin.PlaylistShadeBg, image.Pt(x, topY))
+	}
+	rightSprite := skin.PlaylistShadeBgRight
+	if focused {
+		rightSprite = skin.PlaylistShadeBgRightSelect
+	}
+	g.drawSprite(screen, rightSprite, image.Pt(225, topY))
+
+	label := trackDisplayTitle(g.snap.Track)
+	if g.snap.Track.Artist != "" && g.snap.Track.Title != "" {
+		label = g.snap.Track.Artist + " - " + g.snap.Track.Title
+	}
+	if label == "" {
+		label = "YTM-WMP PLAYLIST"
+	} else if g.snap.Index >= 0 {
+		label = fmt.Sprintf("%d. %s", g.snap.Index+1, label)
+	}
+	fg := style.Normal
+	if g.snap.State != playback.StateIdle {
+		fg = style.Current
+	}
+	if g.textFace != nil {
+		text := ellipsizeTTF(g.textFace, label, 174)
+		drawTTFText(screen, g.textFace, text, 6, topY+2, fg)
+		if g.snap.Track.Duration > 0 {
+			dur := formatClock(g.snap.Track.Duration)
+			durW := measureTTFWidth(g.textFace, dur)
+			drawTTFText(screen, g.textFace, dur, 222-durW, topY+2, style.Normal)
+		}
+	}
+
+	if g.pointer.Active() == WidgetPlaylistShade && g.pointer.Pressed() && g.view.HasSprite(skin.PlaylistExpandSelected) {
+		g.drawSprite(screen, skin.PlaylistExpandSelected, image.Pt(254, topY+3))
+	}
+	if g.pointer.Active() == WidgetPlaylistClose && g.pointer.Pressed() && g.view.HasSprite(skin.PlaylistCloseSelected) {
+		g.drawSprite(screen, skin.PlaylistCloseSelected, image.Pt(264, topY+3))
+	}
 }

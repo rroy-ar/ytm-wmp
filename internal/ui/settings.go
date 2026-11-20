@@ -111,6 +111,7 @@ func (g *Game) initSettings() {
 
 func (g *Game) openSettings() {
 	g.hidePL = false
+	g.shadePL = false
 	g.browserMode = true
 	g.showSettings = true
 	g.showArtModal = false
@@ -247,6 +248,16 @@ func formatScaleLabel(scale float64) string {
 		return fmt.Sprintf("%dX", tenths/10)
 	}
 	return fmt.Sprintf("%.2fX", float64(tenths)/10.0)
+}
+
+func (g *Game) toggleDoubleSize() {
+	if store.SanitizeScale(g.scale) >= 2.0 {
+		g.setScale(1.0)
+		g.setTransientStatus("DOUBLE SIZE: OFF")
+		return
+	}
+	g.setScale(2.0)
+	g.setTransientStatus("DOUBLE SIZE: ON")
 }
 
 func (g *Game) cycleScale() {

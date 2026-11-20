@@ -10,11 +10,12 @@ import (
 // Fixed logical dimensions in 1x skin coordinates.
 // Scaling, if any, happens only at the draw boundary.
 const (
-	MainWindowWidth  = 275
-	MainWindowHeight = 116
-	EQWindowHeight   = 116
-	BrowserHeight    = 232
-	PlaylistHeight   = 232
+	MainWindowWidth   = 275
+	MainWindowHeight  = 116
+	EQWindowHeight    = 116
+	BrowserHeight     = 232
+	PlaylistHeight    = 232
+	ShadeWindowHeight = 14
 
 	WindowWidth  = MainWindowWidth
 	WindowHeight = MainWindowHeight + BrowserHeight
@@ -34,28 +35,42 @@ const (
 	WidgetNext     = "next"
 	WidgetEject    = "eject"
 
-	WidgetMainClose    = "main.close"
-	WidgetMainTime     = "main.time"
-	WidgetMainVis      = "main.vis"
-	WidgetMainVolume   = "main.volume"
-	WidgetMainBalance  = "main.balance"
-	WidgetMainEQ       = "main.eq"
-	WidgetMainPL       = "main.pl"
-	WidgetMainPosition = "main.position"
-	WidgetMainShuffle  = "main.shuffle"
-	WidgetMainRepeat   = "main.repeat"
-	WidgetMainSkin     = "main.skin"
+	WidgetMainClose      = "main.close"
+	WidgetMainShade      = "main.shade"
+	WidgetMainDoubleSize = "main.double_size"
+	WidgetMainTime       = "main.time"
+	WidgetMainVis        = "main.vis"
+	WidgetMainVolume     = "main.volume"
+	WidgetMainBalance    = "main.balance"
+	WidgetMainEQ         = "main.eq"
+	WidgetMainPL         = "main.pl"
+	WidgetMainPosition   = "main.position"
+	WidgetMainShuffle    = "main.shuffle"
+	WidgetMainRepeat     = "main.repeat"
+	WidgetMainSkin       = "main.skin"
 
-	WidgetEQClose   = "eq.close"
-	WidgetEQOn      = "eq.on"
-	WidgetEQAuto    = "eq.auto"
-	WidgetEQPresets = "eq.presets"
-	WidgetEQPlus12  = "eq.plus12"
-	WidgetEQZero    = "eq.zero"
-	WidgetEQMinus12 = "eq.minus12"
-	WidgetEQPreamp  = "eq.preamp"
+	WidgetMainShadePrev  = "main.shade.prev"
+	WidgetMainShadePlay  = "main.shade.play"
+	WidgetMainShadePause = "main.shade.pause"
+	WidgetMainShadeStop  = "main.shade.stop"
+	WidgetMainShadeNext  = "main.shade.next"
+	WidgetMainShadeEject = "main.shade.eject"
+	WidgetMainShadePos   = "main.shade.pos"
+
+	WidgetEQClose    = "eq.close"
+	WidgetEQShade    = "eq.shade"
+	WidgetEQShadeVol = "eq.shade.vol"
+	WidgetEQShadeBal = "eq.shade.bal"
+	WidgetEQOn       = "eq.on"
+	WidgetEQAuto     = "eq.auto"
+	WidgetEQPresets  = "eq.presets"
+	WidgetEQPlus12   = "eq.plus12"
+	WidgetEQZero     = "eq.zero"
+	WidgetEQMinus12  = "eq.minus12"
+	WidgetEQPreamp   = "eq.preamp"
 
 	WidgetPlaylistClose     = "playlist.close"
+	WidgetPlaylistShade     = "playlist.shade"
 	WidgetPlaylistScrollbar = "playlist.scrollbar"
 	WidgetPlaylistAdd       = "playlist.add"
 	WidgetPlaylistRem       = "playlist.rem"
@@ -139,19 +154,29 @@ var playlistRowWidgetIDs = [VisiblePlaylistRows]string{
 // Named bounds in 1x logical coordinates shared between hit testing, input
 // focus checks, and rendering.
 var (
-	EjectButtonBounds  = image.Rect(136, 89, 158, 105)
-	MainCloseBounds    = image.Rect(264, 3, 273, 12)
-	MainTimeBounds     = image.Rect(39, 26, 98, 39)
-	MainVisBounds      = image.Rect(24, 43, 100, 59)
-	MainMarqueeBounds  = image.Rect(111, 24, 265, 36)
-	MainVolumeBounds   = image.Rect(107, 57, 175, 70)
-	MainBalanceBounds  = image.Rect(177, 57, 215, 70)
-	MainEQToggleBounds = image.Rect(219, 58, 242, 70)
-	MainPLToggleBounds = image.Rect(242, 58, 265, 70)
-	MainPositionBounds = image.Rect(16, 72, 264, 82)
-	MainShuffleBounds  = image.Rect(164, 89, 210, 104)
-	MainRepeatBounds   = image.Rect(210, 89, 238, 104)
-	MainSkinBounds     = image.Rect(252, 90, 266, 104)
+	EjectButtonBounds    = image.Rect(136, 89, 158, 105)
+	MainShadeBounds      = image.Rect(254, 3, 263, 12)
+	MainCloseBounds      = image.Rect(264, 3, 273, 12)
+	MainDoubleSizeBounds = image.Rect(10, 47, 18, 55)
+	MainShadePrevBounds  = image.Rect(168, 2, 177, 12)
+	MainShadePlayBounds  = image.Rect(177, 2, 186, 12)
+	MainShadePauseBounds = image.Rect(186, 2, 195, 12)
+	MainShadeStopBounds  = image.Rect(195, 2, 204, 12)
+	MainShadeNextBounds  = image.Rect(204, 2, 214, 12)
+	MainShadeEjectBounds = image.Rect(214, 2, 224, 12)
+	MainShadePosBounds   = image.Rect(226, 4, 243, 11)
+	MainShadeTimeBounds  = image.Rect(124, 2, 163, 12)
+	MainTimeBounds       = image.Rect(39, 26, 98, 39)
+	MainVisBounds        = image.Rect(24, 43, 100, 59)
+	MainMarqueeBounds    = image.Rect(111, 24, 265, 36)
+	MainVolumeBounds     = image.Rect(107, 57, 175, 70)
+	MainBalanceBounds    = image.Rect(177, 57, 215, 70)
+	MainEQToggleBounds   = image.Rect(219, 58, 242, 70)
+	MainPLToggleBounds   = image.Rect(242, 58, 265, 70)
+	MainPositionBounds   = image.Rect(16, 72, 264, 82)
+	MainShuffleBounds    = image.Rect(164, 89, 210, 104)
+	MainRepeatBounds     = image.Rect(210, 89, 238, 104)
+	MainSkinBounds       = image.Rect(252, 90, 266, 104)
 
 	NowPlayingArtBounds    = image.Rect(6, 130, 28, 152)
 	BrowserSettingsBounds  = image.Rect(194, 117, 226, 128)
@@ -226,7 +251,9 @@ var mainWidgets = []Widget{
 }
 
 var mainControlWidgets = []Widget{
+	{ID: WidgetMainShade, Bounds: MainShadeBounds},
 	{ID: WidgetMainClose, Bounds: MainCloseBounds},
+	{ID: WidgetMainDoubleSize, Bounds: MainDoubleSizeBounds},
 	{ID: WidgetMainTime, Bounds: MainTimeBounds},
 	{ID: WidgetMainVis, Bounds: MainVisBounds},
 	{ID: WidgetMainVolume, Bounds: MainVolumeBounds},
@@ -237,6 +264,19 @@ var mainControlWidgets = []Widget{
 	{ID: WidgetMainShuffle, Bounds: MainShuffleBounds},
 	{ID: WidgetMainRepeat, Bounds: MainRepeatBounds},
 	{ID: WidgetMainSkin, Bounds: MainSkinBounds},
+}
+
+var mainShadeWidgets = []Widget{
+	{ID: WidgetMainTime, Bounds: MainShadeTimeBounds},
+	{ID: WidgetMainShadePrev, Bounds: MainShadePrevBounds},
+	{ID: WidgetMainShadePlay, Bounds: MainShadePlayBounds},
+	{ID: WidgetMainShadePause, Bounds: MainShadePauseBounds},
+	{ID: WidgetMainShadeStop, Bounds: MainShadeStopBounds},
+	{ID: WidgetMainShadeNext, Bounds: MainShadeNextBounds},
+	{ID: WidgetMainShadeEject, Bounds: MainShadeEjectBounds},
+	{ID: WidgetMainShadePos, Bounds: MainShadePosBounds},
+	{ID: WidgetMainShade, Bounds: MainShadeBounds},
+	{ID: WidgetMainClose, Bounds: MainCloseBounds},
 }
 
 var resultRowWidgets = []string{

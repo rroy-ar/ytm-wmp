@@ -76,6 +76,18 @@ func TestWidgetsStayInsideWindowAndDoNotOverlap(t *testing.T) {
 		t.Errorf("MainSkinBounds %v should sit to the right of MainRepeatBounds %v", MainSkinBounds, MainRepeatBounds)
 	}
 
+	shadeArea := image.Rect(0, 0, MainWindowWidth, ShadeWindowHeight)
+	for i, widget := range mainShadeWidgets {
+		if !widget.Bounds.In(shadeArea) {
+			t.Errorf("main shade widget %q bounds %v are outside %v", widget.ID, widget.Bounds, shadeArea)
+		}
+		for j := i + 1; j < len(mainShadeWidgets); j++ {
+			if widget.Bounds.Overlaps(mainShadeWidgets[j].Bounds) {
+				t.Errorf("main shade widgets %q and %q overlap", widget.ID, mainShadeWidgets[j].ID)
+			}
+		}
+	}
+
 	browserArea := image.Rect(0, MainWindowHeight, WindowWidth, WindowHeight)
 	for i, widget := range browserWidgets {
 		if !widget.Bounds.In(browserArea) {

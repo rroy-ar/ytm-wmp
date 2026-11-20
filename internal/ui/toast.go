@@ -141,8 +141,8 @@ func (g *Game) toastLayout(t toastItem) (box, dismissRect, actionRect image.Rect
 		height += 18
 	}
 	y := 17
-	if g.canvasHeight() > MainWindowHeight {
-		y = MainWindowHeight + 3
+	if mainH := g.mainHeight(); g.canvasHeight() > mainH {
+		y = mainH + 3
 	}
 	box = image.Rect(5, y, 270, y+height)
 	dismissRect = image.Rect(box.Max.X-16, box.Min.Y+2, box.Max.X-2, box.Min.Y+15)

@@ -183,6 +183,9 @@ func WithInitialConfig(cfg store.Config) GameOption {
 		cfg = store.Sanitize(cfg)
 		g.showEQ = cfg.Windows[store.WindowEQ].Visible
 		g.hidePL = !cfg.Windows[store.WindowPlaylist].Visible
+		g.shadeMain = cfg.Windows[store.WindowMain].Shaded
+		g.shadeEQ = cfg.Windows[store.WindowEQ].Shaded
+		g.shadePL = cfg.Windows[store.WindowPlaylist].Shaded
 		if g.searchQuery == "" {
 			g.browserMode = cfg.BrowserMode
 			g.searchQuery = cfg.LastSearch
@@ -242,9 +245,13 @@ type Game struct {
 
 	showEQ       bool
 	hidePL       bool
+	shadeMain    bool
+	shadeEQ      bool
+	shadePL      bool
 	browserMode  bool
 	showSettings bool
 	focusedPanel panelKind
+	titleClick   doubleClickTracker
 
 	tick            uint64
 	timeRemaining   bool
@@ -310,26 +317,43 @@ func NewGame(parent context.Context, s *skin.Skin, ctrl PlaybackController, sink
 	return g
 }
 
+func (g *Game) mainHeight() int {
+	if g.shadeMain {
+		return ShadeWindowHeight
+	}
+	return MainWindowHeight
+}
+
+func (g *Game) eqHeight() int {
+	if !g.showEQ {
+		return 0
+	}
+	if g.shadeEQ {
+		return ShadeWindowHeight
+	}
+	return EQWindowHeight
+}
+
+func (g *Game) plHeight() int {
+	if g.hidePL {
+		return 0
+	}
+	if g.shadePL {
+		return ShadeWindowHeight
+	}
+	return PlaylistHeight
+}
+
 func (g *Game) canvasHeight() int {
-	h := MainWindowHeight
-	if g.showEQ {
-		h += EQWindowHeight
-	}
-	if !g.hidePL {
-		h += PlaylistHeight
-	}
-	return h
+	return g.mainHeight() + g.eqHeight() + g.plHeight()
 }
 
 func (g *Game) eqTop() int {
-	return MainWindowHeight
+	return g.mainHeight()
 }
 
 func (g *Game) plTop() int {
-	if g.showEQ {
-		return MainWindowHeight + EQWindowHeight
-	}
-	return MainWindowHeight
+	return g.mainHeight() + g.eqHeight()
 }
 
 func (g *Game) browserDeltaY() int {
@@ -355,15 +379,26 @@ func (g *Game) setTransientStatus(msg string) {
 
 func (g *Game) activeWidgets() []Widget {
 	widgets := make([]Widget, 0, 64)
-	widgets = append(widgets, mainWidgets...)
-	widgets = append(widgets, mainControlWidgets...)
+	if g.shadeMain {
+		widgets = append(widgets, mainShadeWidgets...)
+	} else {
+		widgets = append(widgets, mainWidgets...)
+		widgets = append(widgets, mainControlWidgets...)
+	}
 	if g.showEQ {
-		widgets = append(widgets, eqWidgetsAt(g.eqTop())...)
+		if g.shadeEQ {
+			widgets = append(widgets, eqShadeWidgetsAt(g.eqTop())...)
+		} else {
+			widgets = append(widgets, eqWidgetsAt(g.eqTop())...)
+		}
 	}
 	if !g.hidePL {
-		if g.browserMode {
+		switch {
+		case g.shadePL:
+			widgets = append(widgets, playlistShadeWidgetsAt(g.plTop())...)
+		case g.browserMode:
 			widgets = append(widgets, g.browserWidgetsAt(g.plTop())...)
-		} else {
+		default:
 			widgets = append(widgets, playlistWidgetsAt(g.plTop(), g.plMenu)...)
 		}
 	}
@@ -418,6 +453,7 @@ func (g *Game) Update() error {
 	if mousePressed && !wasMousePressed {
 		pt := image.Pt(cursorX, cursorY)
 		g.updatePanelFocus(pt)
+		g.handleTitlebarDoubleClick(pt, time.Now())
 		if g.searchFocused && !pt.In(offsetRect(SearchInputBounds, dy)) && !pt.In(EjectButtonBounds) {
 			g.searchFocused = false
 		}
@@ -425,7 +461,7 @@ func (g *Game) Update() error {
 			g.showArtModal = false
 		}
 	}
-	if !g.showArtModal && !g.showSettings && g.browserMode && !g.hidePL {
+	if !g.showArtModal && !g.showSettings && g.browserMode && !g.hidePL && !g.shadePL {
 		pt := image.Pt(cursorX, cursorY)
 		if len(g.detailStack) == 0 && g.activeTab != browserTabQueue &&
 			(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonMiddle) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight)) &&
@@ -444,9 +480,13 @@ func (g *Game) Update() error {
 
 	g.updateMainSliders(cursorX, mousePressed)
 	if g.showEQ {
-		g.updateEQDrag(g.eqTop(), cursorY, mousePressed)
+		if g.shadeEQ {
+			g.updateEQShadeDrag(cursorX, mousePressed)
+		} else {
+			g.updateEQDrag(g.eqTop(), cursorY, mousePressed)
+		}
 	}
-	if !g.hidePL && !g.browserMode {
+	if !g.hidePL && !g.browserMode && !g.shadePL {
 		g.updatePlaylist(g.plTop(), cursorX, cursorY, mousePressed)
 	}
 
@@ -468,9 +508,49 @@ func (g *Game) Update() error {
 	return nil
 }
 
+func (g *Game) handleTitlebarDoubleClick(pt image.Point, now time.Time) {
+	panel := -1
+	switch {
+	case pt.Y >= 0 && pt.Y < ShadeWindowHeight:
+		if (!g.shadeMain && pt.X >= 0 && pt.X < 254) || (g.shadeMain && pt.X >= 0 && pt.X < 168) {
+			panel = int(panelMain)
+		}
+	case g.showEQ && pt.Y >= g.eqTop() && pt.Y < g.eqTop()+ShadeWindowHeight:
+		if !g.shadeEQ && pt.X >= 0 && pt.X < 254 {
+			panel = int(panelEQ)
+		} else if g.shadeEQ && ((pt.X >= 0 && pt.X < 61) || (pt.X > 158 && pt.X < 164) || (pt.X > 206 && pt.X < 254)) {
+			panel = int(panelEQ)
+		}
+	case !g.hidePL && (!g.browserMode || g.shadePL) && pt.Y >= g.plTop() && pt.Y < g.plTop()+ShadeWindowHeight:
+		if pt.X >= 0 && pt.X < 254 {
+			panel = int(panelPlaylist)
+		}
+	}
+	if panel < 0 {
+		return
+	}
+	if !g.titleClick.Observe(panel, now) {
+		return
+	}
+	switch panelKind(panel) {
+	case panelMain:
+		g.shadeMain = !g.shadeMain
+		g.dragSlider = ""
+	case panelEQ:
+		g.shadeEQ = !g.shadeEQ
+		g.eqDragBand = -1
+		g.eqShadeDrag = ""
+	case panelPlaylist:
+		g.shadePL = !g.shadePL
+		g.plMenu = plMenuNone
+	}
+	g.syncWindowSize()
+	g.markConfigDirty()
+}
+
 func (g *Game) updatePanelFocus(pt image.Point) {
 	switch {
-	case pt.Y < MainWindowHeight:
+	case pt.Y < g.mainHeight():
 		g.focusedPanel = panelMain
 	case g.showEQ && pt.Y < g.plTop():
 		g.focusedPanel = panelEQ
@@ -483,7 +563,7 @@ func (g *Game) updatePanelFocus(pt image.Point) {
 
 func (g *Game) updateMainSliders(cursorX int, pressed bool) {
 	if !pressed {
-		if g.dragSlider == WidgetMainPosition && g.ctrl != nil && g.snap.Duration > 0 && g.snap.State != playback.StateIdle {
+		if (g.dragSlider == WidgetMainPosition || g.dragSlider == WidgetMainShadePos) && g.ctrl != nil && g.snap.Duration > 0 && g.snap.State != playback.StateIdle {
 			target := time.Duration(g.seekPreviewFrac * float64(g.snap.Duration))
 			g.ctrl.Send(playback.Seek{Position: target})
 		}
@@ -493,7 +573,7 @@ func (g *Game) updateMainSliders(cursorX int, pressed bool) {
 
 	if g.dragSlider == "" {
 		switch g.pointer.Active() {
-		case WidgetMainVolume, WidgetMainBalance, WidgetMainPosition:
+		case WidgetMainVolume, WidgetMainBalance, WidgetMainPosition, WidgetMainShadePos:
 			g.dragSlider = g.pointer.Active()
 		}
 	}
@@ -530,6 +610,12 @@ func (g *Game) updateMainSliders(cursorX int, pressed bool) {
 			target := time.Duration(g.seekPreviewFrac * float64(g.snap.Duration))
 			g.setTransientStatus(fmt.Sprintf("SEEK TO: %s / %s", formatClock(target), formatClock(g.snap.Duration)))
 		}
+	case WidgetMainShadePos:
+		if g.snap.Duration > 0 && g.snap.State != playback.StateIdle {
+			g.seekPreviewFrac = sliderRatioX(cursorX, MainShadePosBounds, 3)
+			target := time.Duration(g.seekPreviewFrac * float64(g.snap.Duration))
+			g.setTransientStatus(fmt.Sprintf("SEEK TO: %s / %s", formatClock(target), formatClock(g.snap.Duration)))
+		}
 	}
 }
 
@@ -545,16 +631,27 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.view == nil {
 		ebitenutil.DebugPrintAt(screen, "skin view not ready", 8, 8)
 	} else {
-		g.drawMainWindow(screen)
+		if g.shadeMain {
+			g.drawMainShade(screen)
+		} else {
+			g.drawMainWindow(screen)
+		}
 		if g.showEQ {
-			g.drawEQ(screen, g.eqTop())
+			if g.shadeEQ {
+				g.drawEQShade(screen, g.eqTop())
+			} else {
+				g.drawEQ(screen, g.eqTop())
+			}
 		}
 	}
 
 	if !g.hidePL {
-		if g.browserMode || g.view == nil {
+		switch {
+		case g.shadePL && g.view != nil:
+			g.drawPlaylistShade(screen, g.plTop())
+		case g.browserMode || g.view == nil:
 			g.drawBrowser(screen)
-		} else {
+		default:
 			g.drawPlaylist(screen, g.plTop())
 		}
 	}
@@ -577,6 +674,12 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 	}
 	g.drawSprite(screen, titleName, image.Pt(0, 0))
 
+	if g.pointer.Active() == WidgetMainShade && g.pointer.Pressed() && g.view.HasSprite(skin.MainShadeActive) {
+		g.drawSprite(screen, skin.MainShadeActive, MainShadeBounds.Min)
+	} else if g.view.HasSprite(skin.MainShadeButton) {
+		g.drawSprite(screen, skin.MainShadeButton, MainShadeBounds.Min)
+	}
+
 	if g.pointer.Active() == WidgetMainClose && g.pointer.Pressed() && g.view.HasSprite(skin.MainCloseActive) {
 		g.drawSprite(screen, skin.MainCloseActive, MainCloseBounds.Min)
 	} else if g.view.HasSprite(skin.MainCloseButton) {
@@ -585,6 +688,22 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 
 	if g.view.HasSprite(skin.MainClutterBar) {
 		g.drawSprite(screen, skin.MainClutterBar, image.Pt(10, 22))
+	}
+	doublePressed := g.pointer.Active() == WidgetMainDoubleSize && g.pointer.Pressed()
+	if store.SanitizeScale(g.scale) >= 2.0 || doublePressed {
+		if g.view.HasSprite(skin.MainClutterDSelected) {
+			g.drawSprite(screen, skin.MainClutterDSelected, MainDoubleSizeBounds.Min)
+		} else {
+			vector.DrawFilledRect(
+				screen,
+				float32(MainDoubleSizeBounds.Min.X),
+				float32(MainDoubleSizeBounds.Min.Y),
+				float32(MainDoubleSizeBounds.Dx()),
+				float32(MainDoubleSizeBounds.Dy()),
+				color.RGBA{R: 0x38, G: 0xc0, B: 0x70, A: 0x80},
+				false,
+			)
+		}
 	}
 
 	// Play/pause/stop & working indicators.
@@ -698,6 +817,127 @@ func (g *Game) drawMainWindow(screen *ebiten.Image) {
 	}
 }
 
+func (g *Game) drawMainShade(screen *ebiten.Image) {
+	snap := g.snap
+	bgName := skin.MainShadeBg
+	if g.focusedPanel == panelMain && ebiten.IsFocused() {
+		bgName = skin.MainShadeBgSelected
+	}
+	if g.view.HasSprite(bgName) {
+		g.drawSprite(screen, bgName, image.Pt(0, 0))
+	} else {
+		titleName := skin.TitlebarIdle
+		if g.focusedPanel == panelMain && ebiten.IsFocused() {
+			titleName = skin.TitlebarActive
+		}
+		g.drawSprite(screen, titleName, image.Pt(0, 0))
+	}
+
+	// Shade time display (blinks at ~1Hz when paused).
+	blinkOff := (g.tick/30)%2 == 1
+	if clock := shadeClockText(snap.Position, snap.Duration, snap.State, g.timeRemaining, blinkOff); clock != "" {
+		drawBitmapString(screen, g.view, g.textFace, clock, image.Rect(126, 4, 161, 10), 0, color.RGBA{0x38, 0xc0, 0x70, 0xff})
+	}
+
+	// Mini seek bar (226, 4, 17x7).
+	if g.view.HasSprite(skin.MainShadePosBg) {
+		g.drawSprite(screen, skin.MainShadePosBg, MainShadePosBounds.Min)
+	}
+	if snap.State != playback.StateIdle && snap.Duration > 0 {
+		frac := float64(snap.Position) / float64(snap.Duration)
+		if g.dragSlider == WidgetMainShadePos {
+			frac = g.seekPreviewFrac
+		}
+		frac = clampUnit(frac)
+		thumbX := MainShadePosBounds.Min.X + int(math.Round(frac*float64(MainShadePosBounds.Dx()-3)))
+		thumbSprite := skin.MainShadePosThumb
+		switch {
+		case frac < 0.33 && g.view.HasSprite(skin.MainShadePosThumbL):
+			thumbSprite = skin.MainShadePosThumbL
+		case frac > 0.67 && g.view.HasSprite(skin.MainShadePosThumbR):
+			thumbSprite = skin.MainShadePosThumbR
+		}
+		if g.view.HasSprite(thumbSprite) {
+			g.drawSprite(screen, thumbSprite, image.Pt(thumbX, MainShadePosBounds.Min.Y))
+		} else {
+			vector.DrawFilledRect(screen, float32(thumbX), float32(MainShadePosBounds.Min.Y), 3, 7, color.RGBA{R: 0x38, G: 0xc0, B: 0x70, A: 0xff}, false)
+		}
+	}
+
+	// Highlight pressed mini transport button.
+	if g.pointer.Pressed() {
+		var pressedRect image.Rectangle
+		switch g.pointer.Active() {
+		case WidgetMainShadePrev:
+			pressedRect = MainShadePrevBounds
+		case WidgetMainShadePlay:
+			pressedRect = MainShadePlayBounds
+		case WidgetMainShadePause:
+			pressedRect = MainShadePauseBounds
+		case WidgetMainShadeStop:
+			pressedRect = MainShadeStopBounds
+		case WidgetMainShadeNext:
+			pressedRect = MainShadeNextBounds
+		case WidgetMainShadeEject:
+			pressedRect = MainShadeEjectBounds
+		}
+		if !pressedRect.Empty() {
+			vector.DrawFilledRect(
+				screen,
+				float32(pressedRect.Min.X),
+				float32(pressedRect.Min.Y),
+				float32(pressedRect.Dx()),
+				float32(pressedRect.Dy()),
+				color.RGBA{A: 0x48},
+				false,
+			)
+		}
+	}
+
+	shadePressed := g.pointer.Active() == WidgetMainShade && g.pointer.Pressed()
+	if shadePressed && g.view.HasSprite(skin.MainShadeBtnDepressed) {
+		g.drawSprite(screen, skin.MainShadeBtnDepressed, MainShadeBounds.Min)
+	} else if !shadePressed && g.view.HasSprite(skin.MainShadeBtnSelected) {
+		g.drawSprite(screen, skin.MainShadeBtnSelected, MainShadeBounds.Min)
+	} else if shadePressed && g.view.HasSprite(skin.MainShadeActive) {
+		g.drawSprite(screen, skin.MainShadeActive, MainShadeBounds.Min)
+	} else if g.view.HasSprite(skin.MainShadeButton) {
+		g.drawSprite(screen, skin.MainShadeButton, MainShadeBounds.Min)
+	}
+
+	if g.pointer.Active() == WidgetMainClose && g.pointer.Pressed() && g.view.HasSprite(skin.MainCloseActive) {
+		g.drawSprite(screen, skin.MainCloseActive, MainCloseBounds.Min)
+	} else if g.view.HasSprite(skin.MainCloseButton) {
+		g.drawSprite(screen, skin.MainCloseButton, MainCloseBounds.Min)
+	}
+}
+
+func shadeClockText(pos, dur time.Duration, state playback.State, remaining, blinkOff bool) string {
+	if state == playback.StateIdle {
+		return "--:--"
+	}
+	if state == playback.StatePaused && blinkOff {
+		return ""
+	}
+	display := pos
+	prefix := " "
+	if remaining && dur > 0 {
+		rem := dur - pos
+		if rem < 0 {
+			rem = 0
+		}
+		display = rem
+		prefix = "-"
+	}
+	if display < 0 {
+		display = 0
+	}
+	totalSecs := int(math.Floor(display.Seconds()))
+	mins := (totalSecs / 60) % 100
+	secs := totalSecs % 60
+	return fmt.Sprintf("%s%02d:%02d", prefix, mins, secs)
+}
+
 func (g *Game) marqueeText(snap playback.Snapshot) string {
 	if g.transientMsg != "" && time.Now().Before(g.transientUntil) {
 		return g.transientMsg
@@ -777,6 +1017,15 @@ func (g *Game) onClick(id string) {
 		return
 	}
 	switch id {
+	case WidgetMainShade:
+		g.shadeMain = !g.shadeMain
+		g.dragSlider = ""
+		g.syncWindowSize()
+		g.markConfigDirty()
+		return
+	case WidgetMainDoubleSize:
+		g.toggleDoubleSize()
+		return
 	case WidgetMainClose:
 		g.quitRequested = true
 		return
@@ -802,6 +1051,9 @@ func (g *Game) onClick(id string) {
 		g.clearError()
 		g.openSkinPicker()
 		return
+	case WidgetMainShadeEject:
+		g.focusSearch()
+		return
 	}
 
 	if g.ctrl == nil {
@@ -809,18 +1061,18 @@ func (g *Game) onClick(id string) {
 	}
 	slog.Debug("ui button clicked", "widget", id)
 	switch id {
-	case WidgetPrevious:
+	case WidgetPrevious, WidgetMainShadePrev:
 		g.clearError()
 		g.ctrl.Send(playback.Prev{})
-	case WidgetPlay:
+	case WidgetPlay, WidgetMainShadePlay:
 		g.clearError()
 		g.ctrl.Send(playback.Play{})
-	case WidgetPause:
+	case WidgetPause, WidgetMainShadePause:
 		g.ctrl.Send(playback.Pause{})
-	case WidgetStop:
+	case WidgetStop, WidgetMainShadeStop:
 		g.clearError()
 		g.ctrl.Send(playback.Stop{})
-	case WidgetNext:
+	case WidgetNext, WidgetMainShadeNext:
 		g.clearError()
 		g.ctrl.Send(playback.Next{})
 	case WidgetMainShuffle:
@@ -853,7 +1105,7 @@ func (g *Game) handleKeys() {
 		return
 	}
 	if !g.showArtModal && isPasteJustPressed() {
-		if g.focusedPanel == panelPlaylist && !g.browserMode && !g.hidePL && !g.searchFocused {
+		if g.focusedPanel == panelPlaylist && !g.browserMode && !g.hidePL && !g.shadePL && !g.searchFocused {
 			g.importM3UFromClipboard()
 			return
 		}
@@ -866,6 +1118,10 @@ func (g *Game) handleKeys() {
 	}
 	if g.searchFocused {
 		g.handleSearchKeys()
+		return
+	}
+	if isCtrlOrMetaPressed() && inpututil.IsKeyJustPressed(ebiten.KeyD) {
+		g.toggleDoubleSize()
 		return
 	}
 	if g.showArtModal && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
@@ -1047,9 +1303,9 @@ func (g *Game) currentConfig() store.Config {
 		BrowserMode:   g.browserMode,
 		TimeRemaining: g.timeRemaining,
 		Windows: map[string]store.WindowState{
-			store.WindowMain:     {Visible: true},
-			store.WindowEQ:       {Visible: g.showEQ},
-			store.WindowPlaylist: {Visible: !g.hidePL},
+			store.WindowMain:     {Visible: true, Shaded: g.shadeMain},
+			store.WindowEQ:       {Visible: g.showEQ, Shaded: g.shadeEQ},
+			store.WindowPlaylist: {Visible: !g.hidePL, Shaded: g.shadePL},
 		},
 		Queue:      store.TrackRefsFromModel(snap.Queue),
 		QueueIndex: snap.Index,
@@ -1208,14 +1464,18 @@ func (g *Game) drawDebug(screen *ebiten.Image) {
 	cyan := color.RGBA{R: 0x00, G: 0xff, B: 0xff, A: 0xff}
 	magenta := color.RGBA{R: 0xff, G: 0x00, B: 0xff, A: 0xff}
 
-	for _, p := range mainPlacements {
-		name := g.spriteName(p.Sprite)
-		def, ok := skin.Definition(name)
-		if !ok {
-			continue
+	if g.shadeMain {
+		vector.StrokeRect(screen, 0.5, 0.5, MainWindowWidth-1, ShadeWindowHeight-1, 1, cyan, false)
+	} else {
+		for _, p := range mainPlacements {
+			name := g.spriteName(p.Sprite)
+			def, ok := skin.Definition(name)
+			if !ok {
+				continue
+			}
+			width, height := def.Src.Dx(), def.Src.Dy()
+			vector.StrokeRect(screen, float32(p.At.X)+0.5, float32(p.At.Y)+0.5, float32(width), float32(height), 1, cyan, false)
 		}
-		width, height := def.Src.Dx(), def.Src.Dy()
-		vector.StrokeRect(screen, float32(p.At.X)+0.5, float32(p.At.Y)+0.5, float32(width), float32(height), 1, cyan, false)
 	}
 	for _, widget := range g.activeWidgets() {
 		b := widget.Bounds

@@ -6,6 +6,7 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 ![Platform](https://img.shields.io/badge/Platform-Linux%20(X11%20%2F%20Wayland)-FCC624?logo=linux&logoColor=black)
 ![Engine](https://img.shields.io/badge/UI%20%26%20Audio-Ebitengine%20v2-DB5620)
 ![Skins](https://img.shields.io/badge/Skins-Classic%20.wsz-purple)
+![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
 <!-- TODO: Replace with a short screen recording (GIF or MP4/WebM) showing search, playback, EQ/visualizer, WindowShade, and hot-reloading a .wsz skin -->
 > **[Hero Demo Video / GIF Placeholder]**
@@ -27,6 +28,7 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 - [Roadmap & Scope](#roadmap--scope)
 - [Development & Testing](#development--testing)
 - [Acknowledgments](#acknowledgments)
+- [License & Legal Notice](#license--legal-notice)
 
 ---
 
@@ -421,3 +423,13 @@ Press **`F1`** while running `ytm-wmp` to toggle the built-in debug overlay (FPS
 
 - Classic Winamp 2.x sprite coordinates, `text.bmp` character lookup tables, and default color tables are derived from [Webamp (`captbaritone/webamp`)](https://github.com/captbaritone/webamp) (MIT License). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 - Built with [Ebitengine](https://ebitengine.org/), [`yt-dlp`](https://github.com/yt-dlp/yt-dlp), and [`ffmpeg`](https://ffmpeg.org/).
+
+---
+
+## License & Legal Notice
+
+This project is licensed under the [MIT License](LICENSE).
+
+### Disclaimer
+- **No Bundled Skins or Media:** This repository contains only original placeholder skin assets (`assets/dev-skin/`) created for development and testing. No copyrighted Winamp skins, audio streams, or media files are distributed with this software.
+- **Third-Party Services:** `ytm-wmp` is an independent desktop client and is not affiliated with, endorsed by, or connected to Google, YouTube, or Winamp. Users are responsible for complying with the Terms of Service of YouTube and any external tools (`yt-dlp`, `ffmpeg`) invoked by the application.

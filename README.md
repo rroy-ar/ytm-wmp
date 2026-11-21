@@ -9,9 +9,11 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
 ---
+<div align="center">
 
+[https://github.com/user-attachments/assets/TU-ID-DE-VIDEO](https://github.com/user-attachments/assets/2e086a2c-362f-47a4-88af-98e7b9c72803)
 
-https://github.com/user-attachments/assets/2e086a2c-362f-47a4-88af-98e7b9c72803
+</div>
 
 
 ## Table of Contents

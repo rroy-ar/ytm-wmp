@@ -8,11 +8,6 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 ![Skins](https://img.shields.io/badge/Skins-Classic%20.wsz-purple)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
-<!-- TODO: Replace with a short screen recording (GIF or MP4/WebM) showing search, playback, EQ/visualizer, WindowShade, and hot-reloading a .wsz skin -->
-> **[Hero Demo Video / GIF Placeholder]**
->
-> *`docs/media/demo.gif` — Full walkthrough: searching YouTube Music, playing tracks, adjusting the 10-band EQ & spectrum visualizer, toggling WindowShade / 2X scale, and hot-reloading a classic `.wsz` skin.*
-
 ---
 
 ## Table of Contents
@@ -63,15 +58,13 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 
 ## Screenshots & Media
 
-<!-- TODO: Capture screenshots into docs/media/ and replace the placeholders below with standard Markdown images: ![Alt](docs/media/file.png) -->
-
 | View | Preview |
 |---|---|
-| **Full Winamp Rack (Main + EQ + Playlist)**<br>Showing classic chrome, active spectrum visualizer, 10-band EQ graph, and skinned playlist editor. | `[Placeholder: docs/media/rack-full.png]` |
-| **Catalog Browser & Artwork Preview**<br>Searching YouTube Music across Songs / Playlists / Albums / Artists with `300×300` now-playing artwork. | `[Placeholder: docs/media/browser-catalog.png]` |
-| **WindowShade & 2X Scale**<br>Collapsed `14px` shade bars with mini transport/seek controls and double-size scaling. | `[Placeholder: docs/media/windowshade-2x.png]` |
-| **Custom `.wsz` Skin Showcase**<br>Hot-reloading community `.wsz` skins via the `SK` picker (e.g. from the Winamp Skin Museum). | `[Placeholder: docs/media/custom-skins.png]` |
-| **Settings Panel & `F1` Debug Overlay**<br>In-app configuration (`F2`) and sprite/hitbox diagnostics (`F1`). | `[Placeholder: docs/media/settings-debug.png]` |
+| **Full Winamp Rack (Main + EQ + Playlist)**<br>Showing classic chrome, active spectrum visualizer, 10-band EQ graph, and skinned playlist editor. | ![Full Winamp Rack](docs/media/rack-full.png) |
+| **Catalog Browser & Artwork Preview**<br>Searching YouTube Music across Songs / Playlists / Albums / Artists with `300×300` now-playing artwork. | ![Catalog Browser and Artwork Preview](docs/media/browser-catalog.png) |
+| **WindowShade & 2X Scale**<br>Collapsed `14px` shade bars with mini transport/seek controls and double-size scaling. | ![WindowShade and 2X Scale](docs/media/windowshade-2x.png) |
+| **Custom `.wsz` Skin Showcase**<br>Hot-reloading community `.wsz` skins via the `SK` picker (e.g. from the Winamp Skin Museum). | ![Custom .wsz Skin Showcase](docs/media/custom-skins.png) |
+| **Settings Panel & `F1` Debug Overlay**<br>In-app configuration (`F2`) and sprite/hitbox diagnostics (`F1`). | ![Settings Panel and F1 Debug Overlay](docs/media/settings-debug.png) |
 
 ---
 

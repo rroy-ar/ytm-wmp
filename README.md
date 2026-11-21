@@ -10,6 +10,10 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 
 ---
 
+
+https://github.com/user-attachments/assets/2e086a2c-362f-47a4-88af-98e7b9c72803
+
+
 ## Table of Contents
 
 - [Features](#features)

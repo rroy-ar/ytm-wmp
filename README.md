@@ -379,13 +379,14 @@ docs/
 ### Planned
 - [ ] `region.txt` polygon window masks for irregularly shaped classic skins.
 - [ ] Custom `.cur` cursor support.
+- [ ] MilkDrop visualizer support.
 - [ ] Optional Linux desktop integration (MPRIS / media keys) and gapless playback.
 - [ ] Performance profiling, Linux CI, packaging, and `v0.1` release.
 
 ### Explicit Non-Goals
 - **Windows / macOS support** — targeted strictly at Linux (X11 / Wayland).
 - **Modern `.wal` skins** (XML + Maki scripting) — classic 2.x `.wsz` skins only.
-- **Video playback, AVS/MilkDrop, CD ripping, or account/cookie sync** — focused on fast, unauthenticated public catalog playback.
+- **Video playback, CD ripping, or account/cookie sync** — focused on fast, unauthenticated public catalog playback.
 
 ---
 

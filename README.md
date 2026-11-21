@@ -415,6 +415,7 @@ Press **`F1`** while running `ytm-wmp` to toggle the built-in debug overlay (FPS
 ## Acknowledgments
 
 - Classic Winamp 2.x sprite coordinates, `text.bmp` character lookup tables, and default color tables are derived from [Webamp (`captbaritone/webamp`)](https://github.com/captbaritone/webamp) (MIT License). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- Classic `.wsz` skins shown in the screenshots and demo video were sourced from the [Winamp Skin Museum](https://skins.webamp.org/) (no individual authors were listed on the museum pages; all rights remain with their respective creators, and no third-party skins are distributed in this repository).
 - Built with [Ebitengine](https://ebitengine.org/), [`yt-dlp`](https://github.com/yt-dlp/yt-dlp), and [`ffmpeg`](https://ffmpeg.org/).
 
 ---

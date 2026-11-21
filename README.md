@@ -3,7 +3,7 @@
 A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x (`.wsz`) skin support, written in Go.
 
 ![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Linux%20(X11%20%2F%20OpenGL)-FCC624?logo=linux&logoColor=black)
+![Platform](https://img.shields.io/badge/Platform-Linux%20(X11%20%2F%20Wayland)-FCC624?logo=linux&logoColor=black)
 ![Engine](https://img.shields.io/badge/UI%20%26%20Audio-Ebitengine%20v2-DB5620)
 ![Skins](https://img.shields.io/badge/Skins-Classic%20.wsz-purple)
 
@@ -77,7 +77,7 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 
 ### Prerequisites
 
-- **OS**: Linux desktop with X11 and OpenGL (Windows and macOS are out of scope).
+- **OS**: Linux desktop (X11 or Wayland with OpenGL; Windows and macOS are out of scope).
 - **Go**: `1.27+` (matching [`go.mod`](go.mod)).
 - **Runtime tools**:
   - [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) on `PATH` (or configured in Settings)
@@ -389,7 +389,7 @@ docs/
 - [ ] Performance profiling, Linux CI, packaging, and `v0.1` release.
 
 ### Explicit Non-Goals
-- **Windows / macOS support** — targeted strictly at Linux (X11 / OpenGL).
+- **Windows / macOS support** — targeted strictly at Linux (X11 / Wayland).
 - **Modern `.wal` skins** (XML + Maki scripting) — classic 2.x `.wsz` skins only.
 - **Video playback, AVS/MilkDrop, CD ripping, or account/cookie sync** — focused on fast, unauthenticated public catalog playback.
 

@@ -378,8 +378,7 @@ docs/
 
 ### Planned
 - [ ] `region.txt` polygon window masks for irregularly shaped classic skins.
-- [ ] Real-world `.wsz` skin corpus verification and edge-case polish.
-- [ ] Optional skin browser & custom `.cur` cursor support.
+- [ ] Custom `.cur` cursor support.
 - [ ] Optional Linux desktop integration (MPRIS / media keys) and gapless playback.
 - [ ] Performance profiling, Linux CI, packaging, and `v0.1` release.
 

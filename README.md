@@ -92,7 +92,24 @@ https://github.com/user-attachments/assets/2e086a2c-362f-47a4-88af-98e7b9c72803
     ```
   - **Fedora / Arch**: install the equivalent `libX11`, `libXcursor`, `libXrandr`, `libXinerama`, `libXi`, `libXrender`, and Mesa GL development packages.
 
-### Build & Run
+### Install from a Release Tarball
+
+If you downloaded a prebuilt `ytm-wmp-<version>-linux-amd64.tar.gz` archive from GitHub Releases (no Go toolchain or `make` required, only runtime `yt-dlp` and `ffmpeg`):
+
+```sh
+tar -xzf ytm-wmp-<version>-linux-amd64.tar.gz
+cd ytm-wmp-<version>-linux-amd64
+
+# Installs binaries, .desktop entry, and icon to ~/.local (or /usr/local with sudo; override with PREFIX=...)
+./install.sh
+
+# Uninstall later
+./install.sh --uninstall
+```
+
+### Build & Install from Source
+
+If you are building from the repository with Go and `make`:
 
 ```sh
 git clone https://github.com/rroy-ar/ytm-wmp.git
@@ -101,11 +118,12 @@ cd ytm-wmp
 # Run directly with the bundled dev skin
 go run ./cmd/ytm-wmp
 
-# Or build binaries and install locally (binaries + desktop entry + icon)
+# Or build and install locally (PREFIX defaults to /usr/local for make)
 make build
 make install PREFIX=~/.local
+# Uninstall with: make uninstall PREFIX=~/.local
 
-# Or run a standalone binary directly
+# Or run a built binary directly
 ./ytm-wmp
 ```
 

@@ -1107,21 +1107,23 @@ writes, schema migration.
 
 Each chunk must have a visible/audible demo and not regress v1.
 
-### Phase 7 — Hardening and v0.1
+### Phase 7 — Hardening and v0.1 (in progress)
 
 **Work**
 
-- Error paths/timeouts: missing/old yt-dlp, ffmpeg failure, offline, rate limit,
-  age-restricted/members-only, expired URL.
-- Performance: pprof CPU/heap, frame budget, allocation check in `Draw`,
-  time-to-first-audio measurement.
-- Tests: parser/queue/state unit tests, fake-process integration, corpus smoke,
-  `-race`, fuzz skin/BMP.
-- Packaging: Linux binary; Linux CI; desktop entry/icon.
-- Docs: README install/troubleshooting, architecture/ADRs, legal note (no
-  bundled skins/content; yt-dlp/YouTube ToS).
-- Release: tag v0.1.0, smoke checklist, keep yt-dlp update instructions
-  prominent.
+- Error paths/timeouts (done): `ytdlp.Resolver` 30s default resolve timeout
+  (`WithTimeout`), outdated `yt-dlp` (>180 days) startup warning
+  (`deps.OutdatedYTDLPWarning`), refined `playback.ClassifyError` messages
+  (HTTP 429 rate limit, `context.DeadlineExceeded`, bot verification,
+  age-restricted, members-only), and `TestEbitenSinkCancelUnblocksStalledReader`
+  stalled-reader teardown verification.
+- Linux CI (done): `.github/workflows/ci.yml` runs `gofmt`, `go vet`, `go build`,
+  `xvfb-run -a go test ./...`, `xvfb-run -a go test -race ./...`, and a 10s
+  `FuzzSkinOpen` smoke pass with X11/GL dev headers, `xvfb`, and `dbus`.
+- Remaining: performance profiling (`pprof` CPU/heap, frame budget, `Draw`
+  allocation audit), 20-skin `.wsz` corpus smoke check, Linux packaging
+  (embedded `dev-skin`, `.desktop`/icon/Makefile), README troubleshooting/known
+  limitations, and `v0.1.0` tag.
 
 **Verify:** v0.1 builds on Linux; a clean machine can install
 deps, launch, load a skin, search, and play; 20-skin smoke test passes; known
@@ -1132,7 +1134,7 @@ limitations documented.
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Ebitengine audio + live pipe teardown deadlocks/races | High | Phase 1 spike passed; close/kill the source before `PauseAndStopReading`; natural EOF waits for exit; fake-process + live shutdown tests; `-race` |
-| `PauseAndStopReading` blocks on a stalled read | High | Close/kill ffmpeg first; close the pipe; two-second EOF reap timeout; still add a fake stalled-reader test |
+| `PauseAndStopReading` blocks on a stalled read | High | Close/kill ffmpeg first; close the pipe; two-second EOF reap timeout; verified by `TestEbitenSinkCancelUnblocksStalledReader` |
 | Paused session holds ffmpeg and the network connection | Medium | Deliberate for instant resume (kept in Phase 2+) |
 | YouTube/yt-dlp changes break playback | High | Cache by video ID; one stale retry; version check; clear update message; keep catalog/resolver boundaries |
 | InnerTube API fragility | High | Public yt-dlp path first; wrap third-party clients; yt-dlp fallback for streams |
@@ -1255,6 +1257,11 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `e9b2ac0` ci: add Linux GitHub Actions workflow for build, tests, race, and fuzz
+- `545e307` test(audio): verify teardown unblocks stalled reader without deadlock
+- `fd8407b` feat(deps,playback,cmd): warn on outdated yt-dlp and refine error taxonomy
+- `422c1d4` feat(ytdlp): add configurable per-resolve timeout
+- `75b0b79` docs: document Linux MPRIS2 D-Bus integration
 - `e7d1f9f` feat(cmd): wire MPRIS2 D-Bus server and -mpris flag into ytm-wmp
 - `4d255a3` feat(mpris): add Linux MPRIS2 D-Bus server and tests
 - `601250f` feat(playback): add snapshot Subscribe notifications to Controller

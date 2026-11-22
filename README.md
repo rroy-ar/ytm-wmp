@@ -389,7 +389,7 @@ docs/
 - [ ] Custom `.cur` cursor support.
 - [ ] MilkDrop visualizer support.
 - [ ] Gapless playback.
-- [ ] Performance profiling, Linux CI, packaging, and `v0.1` release.
+- [ ] Performance profiling, Linux packaging (`.desktop` / icon), and `v0.1` release.
 
 ### Explicit Non-Goals
 - **Windows / macOS support** — targeted strictly at Linux (X11 / Wayland).

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  linux-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux audio/windowing build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev \
+            libxi-dev libxrender-dev libgl1-mesa-dev \
+            xvfb dbus
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files not formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet and build
+        run: |
+          go vet ./...
+          go build ./...
+
+      - name: Run tests
+        run: xvfb-run -a go test ./...
+
+      - name: Run race detector tests
+        run: xvfb-run -a go test -race ./...
+
+      - name: Fuzz smoke test
+        run: go test -fuzz=FuzzSkinOpen ./internal/skin -fuzztime=10s

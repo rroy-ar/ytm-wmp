@@ -1213,3 +1213,65 @@ func TestControllerRepeatTakesPrecedenceOverAutoplay(t *testing.T) {
 	cancel()
 	waitDone(t, ctrl)
 }
+
+func TestControllerSubscribeNotifiesOnPublishAndUnsubscribes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resolver := newFakeResolver()
+	opener := newFakeOpener()
+	sink := newFakeSink()
+	ctrl := NewController(resolver, opener, sink)
+
+	ch, unsub := ctrl.Subscribe()
+	defer unsub()
+
+	go ctrl.Run(ctx)
+
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for initial publish notification")
+	}
+
+	ctrl.Send(SetVolume{Volume: 0.42})
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for volume notification")
+	}
+	waitCondition(t, func() bool {
+		return ctrl.Snapshot().Volume == 0.42
+	})
+
+	ctrl.Send(SetShuffle{Enabled: true})
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for shuffle notification")
+	}
+	waitCondition(t, func() bool {
+		return ctrl.Snapshot().Shuffle
+	})
+
+	unsub()
+	unsub() // idempotent
+
+	// Drain any pending signal and verify further publishes don't deliver.
+	select {
+	case <-ch:
+	default:
+	}
+	ctrl.Send(SetRepeat{Mode: RepeatAll})
+	waitCondition(t, func() bool {
+		return ctrl.Snapshot().Repeat == RepeatAll
+	})
+	select {
+	case <-ch:
+		t.Fatal("received notification after unsubscribe")
+	default:
+	}
+
+	cancel()
+	waitDone(t, ctrl)
+}

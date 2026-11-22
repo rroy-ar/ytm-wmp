@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -112,6 +113,10 @@ type Controller struct {
 	done     chan struct{}
 
 	snap atomic.Pointer[snapshotState]
+
+	subMu     sync.Mutex
+	nextSubID uint64
+	subs      map[uint64]chan struct{}
 }
 
 // NewController creates a playback controller wired to resolver, opener, and sink.
@@ -185,6 +190,42 @@ func (c *Controller) Snapshot() Snapshot {
 // Done is closed when Run has stopped all worker goroutines and exited.
 func (c *Controller) Done() <-chan struct{} {
 	return c.done
+}
+
+// Subscribe registers a coalesced notification channel that signals whenever a
+// new Snapshot is published (state, track, metadata, volume, shuffle, repeat,
+// queue, or seek changes). Call the returned function to unsubscribe.
+func (c *Controller) Subscribe() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	c.subMu.Lock()
+	if c.subs == nil {
+		c.subs = make(map[uint64]chan struct{})
+	}
+	c.nextSubID++
+	id := c.nextSubID
+	c.subs[id] = ch
+	c.subMu.Unlock()
+
+	var once sync.Once
+	unsub := func() {
+		once.Do(func() {
+			c.subMu.Lock()
+			delete(c.subs, id)
+			c.subMu.Unlock()
+		})
+	}
+	return ch, unsub
+}
+
+func (c *Controller) notifySubscribers() {
+	c.subMu.Lock()
+	for _, ch := range c.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	c.subMu.Unlock()
 }
 
 // Run executes the playback actor loop until ctx is canceled.
@@ -1049,6 +1090,7 @@ func (a *actor) publish() {
 		snap:       snap,
 		baseOffset: a.baseOffset,
 	})
+	a.ctrl.notifySubscribers()
 }
 
 func (a *actor) emit(ev Event) {

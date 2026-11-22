@@ -25,6 +25,8 @@ import (
 	"github.com/rroy-ar/ytm-wmp/internal/model"
 )
 
+var version = "dev"
+
 type catalogFactory func(ctx context.Context, backend string) (catalog.Catalog, error)
 
 type catalogSelection struct {
@@ -56,7 +58,12 @@ func executeWithFactory(ctx context.Context, args []string, stdout, stderr io.Wr
 	globalFS := flag.NewFlagSet("ytmctl", flag.ContinueOnError)
 	globalFS.SetOutput(stderr)
 	globalCat := globalFS.String("catalog", "ytmusic", "catalog backend: ytmusic or ytdlp")
+	versionFlag := globalFS.Bool("version", false, "print version and exit")
 	if err := globalFS.Parse(args); err != nil {
+		return err
+	}
+	if *versionFlag {
+		_, err := fmt.Fprintf(stdout, "ytmctl %s\n", version)
 		return err
 	}
 	globalExplicit := flagSetExplicitly(globalFS, "catalog")
@@ -92,6 +99,9 @@ func executeWithFactory(ctx context.Context, args []string, stdout, stderr io.Wr
 		return runRadio(ctx, subArgs, stdout, stderr, sel)
 	case "artwork":
 		return runArtwork(ctx, subArgs, stdout, stderr, sel, art)
+	case "version":
+		_, err := fmt.Fprintf(stdout, "ytmctl %s\n", version)
+		return err
 	default:
 		printUsage(stderr)
 		return fmt.Errorf("unknown subcommand %q", subcmd)
@@ -370,5 +380,5 @@ func defaultArtworkDir() string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: ytmctl [-catalog ytmusic|ytdlp] <search|track|playlist|radio|artwork> [flags] <args>")
+	fmt.Fprintln(w, "usage: ytmctl [-catalog ytmusic|ytdlp] [-version] <search|track|playlist|radio|artwork|version> [flags] <args>")
 }

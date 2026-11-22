@@ -242,3 +242,16 @@ func TestExecuteRadio(t *testing.T) {
 		t.Fatal("radio without RadioProvider succeeded, want error")
 	}
 }
+
+func TestExecuteVersion(t *testing.T) {
+	for _, args := range [][]string{{"-version"}, {"version"}} {
+		var out, errOut bytes.Buffer
+		if err := execute(context.Background(), args, &out, &errOut, nil, nil); err != nil {
+			t.Fatalf("execute(%v) = %v", args, err)
+		}
+		want := "ytmctl " + version + "\n"
+		if out.String() != want {
+			t.Fatalf("execute(%v) stdout = %q, want %q", args, out.String(), want)
+		}
+	}
+}

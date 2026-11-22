@@ -42,6 +42,8 @@ const (
 	devSkinPath   = "assets/dev-skin"
 )
 
+var version = "dev"
+
 type dynamicOpener struct {
 	mu     sync.RWMutex
 	ffmpeg string
@@ -80,8 +82,14 @@ func run() error {
 	playlistFlag := flag.String("playlist", "", "YouTube/YTM playlist URL or ID to load at startup")
 	autoplayFlag := flag.Bool("autoplay", true, "queue YouTube Music radio suggestions when the queue ends")
 	mprisFlag := flag.Bool("mpris", true, "enable Linux MPRIS D-Bus media controls")
+	versionFlag := flag.Bool("version", false, "print version and exit")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("ytm-wmp %s\n", version)
+		return nil
+	}
 
 	explicitFlags := make(map[string]bool)
 	flag.Visit(func(f *flag.Flag) {

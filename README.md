@@ -49,6 +49,7 @@ A lightweight, Linux-native YouTube Music desktop player with classic Winamp 2.x
 - **Real-time `viscolor.txt` Visualizer** powered by a 1024-point Hann-windowed FFT (click the visualizer box to cycle **Spectrum → Oscilloscope → Off**).
 
 ### Player UX & Persistence
+- **Linux MPRIS2 D-Bus integration (`org.mpris.MediaPlayer2.ytm_wmp`)**: works out of the box with desktop media keys, `playerctl`, GNOME/KDE/Waybar widgets, lock-screen controls, track metadata/artwork, seeking, shuffle, repeat, volume, and `OpenUri`.
 - **Versioned, atomic `config.json` persistence**: restores skin, volume, balance, queue, window visibility/shade states, scale, audio buffer size, artwork cache limits, tool paths, and last search on startup.
 - **In-app Settings panel (`SET` / `F2`)** for configuring skin, scale, audio buffer, artwork cache stats/pruning, and custom `yt-dlp`/`ffmpeg` binary paths.
 - **Actionable dependency & error toasts** — if `yt-dlp` or `ffmpeg` is missing from `PATH`, the player still opens and lets you point to custom binary paths directly in Settings.
@@ -143,6 +144,7 @@ go run ./cmd/ytm-wmp -autoplay=false -debug
 | `-playlist` | *(empty)* | Load a YouTube/YTM playlist/album URL/ID or local `.m3u`/`.m3u8` |
 | `-url` | *(demo track)* | Repeatable video ID, watch URL, or search query for the initial queue (also accepts positional args) |
 | `-autoplay` | `true` | Automatically queue YouTube Music Up Next radio tracks when the queue ends |
+| `-mpris` | `true` | Enable Linux MPRIS2 D-Bus media controls (`org.mpris.MediaPlayer2.ytm_wmp`) |
 | `-debug` | `false` | Enable verbose debug logging |
 
 > **Tip:** Even with `-catalog ytmusic`, prefixing any search query in the UI with `yt:` or `ytdlp:` routes that query to regular YouTube via `yt-dlp` for videos not indexed on YouTube Music.
@@ -220,6 +222,7 @@ flowchart TD
     Artwork["internal/artwork (Fetch, Decode, Resize, Disk & LRU Cache)"]
     Store["internal/store (Versioned Atomic config.json)"]
     M3U["internal/m3u (EXTM3U Import / Export)"]
+    MPRIS["internal/mpris (Linux MPRIS2 D-Bus Server)"]
     Deps["internal/deps (yt-dlp / ffmpeg Discovery)"]
     Model["internal/model (Track, StreamInfo, YouTube ID Helpers)"]
 
@@ -230,6 +233,7 @@ flowchart TD
     Main --> Artwork
     Main --> Store
     Main --> M3U
+    Main --> MPRIS
     Main --> Deps
     Main --> Skin
 
@@ -254,6 +258,8 @@ flowchart TD
     YTDLP --> Model
     Store --> Model
     M3U --> Model
+    MPRIS --> Playback
+    MPRIS --> Model
 ```
 
 ### Runtime, Concurrency & Audio Pipeline
@@ -357,6 +363,7 @@ internal/
 ├── skin/                  # Pure-Go .wsz/.zip/dir skin parser, sprite table, pledit/viscolor
 ├── store/                 # Versioned atomic config.json persistence, migration, debounced saver
 ├── m3u/                   # #EXTM3U playlist parser and formatter
+├── mpris/                 # Linux MPRIS2 D-Bus media controls & metadata server
 └── ui/                    # Ebitengine Game loop, immediate-mode input, docked panels & toasts
     └── skinview/          # One-time GPU sheet upload and SubImage / glyph / slider caches
 assets/
@@ -374,13 +381,14 @@ docs/
 - Full classic Winamp 2.x `.wsz` skin rendering (Main, Equalizer, Playlist, WindowShade, `1X`–`2X` scaling, hot-reload).
 - Pure-Go YouTube Music InnerTube catalog (Songs, Playlists, Albums, Artists, Up Next Radio) + `yt-dlp` fallback.
 - Live 10-band biquad EQ DSP and `viscolor.txt` Spectrum / Oscilloscope visualizer.
+- Linux MPRIS2 D-Bus media controls (media keys, `playerctl`, desktop widgets, metadata, seeking, volume, shuffle/repeat).
 - Multi-track queue with shuffle bag, repeat modes, history, M3U import/export, and atomic `config.json` persistence.
 
 ### Planned
 - [ ] `region.txt` polygon window masks for irregularly shaped classic skins.
 - [ ] Custom `.cur` cursor support.
 - [ ] MilkDrop visualizer support.
-- [ ] Optional Linux desktop integration (MPRIS / media keys) and gapless playback.
+- [ ] Gapless playback.
 - [ ] Performance profiling, Linux CI, packaging, and `v0.1` release.
 
 ### Explicit Non-Goals

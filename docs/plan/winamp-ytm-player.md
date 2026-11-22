@@ -2,12 +2,13 @@
 
 Status: active execution plan. Phases 0, 1, 2, 3A, 3.5 cleanup, 3B, 4
 (complete classic skin system), 5 (full player UX and persistence), 6A (EQ DSP),
-6B (spectrum/oscilloscope visualizer), and 6C partial (shade mode + double-size `D`
-button) are complete; remaining optional Phase 6 chunks (`region.txt` masks,
-6D–6E) and Phase 7 (hardening and v0.1 release) remain. This document is the
-single source of truth for architecture, status, and upcoming milestones.
+6B (spectrum/oscilloscope visualizer), 6C partial (shade mode + double-size `D`
+button), and 6E partial (Linux MPRIS2 D-Bus media controls) are complete;
+remaining optional Phase 6 chunks (`region.txt` masks, 6D, gapless in 6E) and
+Phase 7 (hardening and v0.1 release) remain. This document is the single source
+of truth for architecture, status, and upcoming milestones.
 
-Last updated: 2026-11-20.
+Last updated: 2026-11-21.
 
 ## 1. Where the project is today
 
@@ -73,6 +74,14 @@ Implemented and covered by tests:
   `viscolor.txt` palettes. Missing or truncated sprites become labelled magenta
   placeholders.
 - `internal/m3u` parses and formats `#EXTM3U` playlists of YouTube URLs/IDs.
+- `internal/mpris` implements a pure-Go Linux MPRIS2 D-Bus server
+  (`org.mpris.MediaPlayer2.ytm_wmp`, falling back to `.instance<pid>`) wired
+  to `playback.Controller.Subscribe()`, exposing root/player methods
+  (`Play`, `Pause`, `PlayPause`, `Stop`, `Next`, `Previous`, `Seek`,
+  `SetPosition`, `OpenUri`, `Quit`), dynamic `Position` and metadata/artwork
+  properties, writable `LoopStatus`/`Shuffle`/`Volume`, and `PropertiesChanged`
+  / `Seeked` signals (`-mpris`, enabled by default, degrading gracefully when
+  no session bus is available).
 - `internal/ui` implements the docked/stacked Winamp rack (`Main 275x116`,
   toggleable `EQ 275x116`, toggleable `Playlist/Browser 275x232`) with discrete
   OS window resizes on `EQ`/`PL`/shade/scale changes, WindowShade `14px`
@@ -122,7 +131,7 @@ Implemented and covered by tests:
 What is still missing:
 
 - Remaining optional Phase 6 fidelity chunks: `region.txt` polygon masks (rest
-  of 6C), skin browser/cursors (6D), and gapless/MPRIS/media keys (6E).
+  of 6C), skin browser/cursors (6D), and gapless playback (rest of 6E).
 - Phase 7 hardening: real `.wsz` skin corpus smoke verification, performance
   profiling, packaging, Linux CI, and `v0.1` release.
 
@@ -209,6 +218,7 @@ internal/catalog/ytmusic/    pure-Go InnerTube WEB_REMIX catalog, radio, and tab
 internal/artwork/            thumbnail fetch/decode/resize/disk+LRU cache/prune+stats/placeholder
 internal/store/              versioned atomic config.json, TrackRef queue, debounced saver
 internal/m3u/                #EXTM3U parser and formatter for YouTube URLs/IDs
+internal/mpris/              pure-Go Linux MPRIS2 D-Bus server (org.mpris.MediaPlayer2)
 assets/dev-skin/             original loose BMPs; no copyrighted skins
 docs/adr/                    short decision records (0001, 0002, 0003)
 ```
@@ -1087,7 +1097,13 @@ writes, schema migration.
   toggle (`1X` <-> `2X`, also `Ctrl+D`). Remaining in 6C: `region.txt` polygon
   masks and point-in-polygon hit testing.
 - 6D Skin browser/cursors; skin folder scanning; `.cur` if cheap.
-- 6E Gapless/MPRIS/media keys; only after the rest is solid.
+- **6E Gapless/MPRIS/media keys (Partial):** implemented Linux MPRIS2 D-Bus
+  integration in `internal/mpris` (`org.mpris.MediaPlayer2.ytm_wmp` +
+  `.instance<pid>` fallback) backed by `playback.Controller.Subscribe()` and
+  wired into `cmd/ytm-wmp` behind `-mpris` (default `true`), supporting
+  transport controls, `Seek`/`SetPosition`/`OpenUri`/`Quit`, track metadata &
+  artwork, writable `LoopStatus`/`Shuffle`/`Volume`, and `PropertiesChanged`/
+  `Seeked` signals. Remaining in 6E: gapless playback.
 
 Each chunk must have a visible/audible demo and not regress v1.
 
@@ -1239,6 +1255,9 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `e7d1f9f` feat(cmd): wire MPRIS2 D-Bus server and -mpris flag into ytm-wmp
+- `4d255a3` feat(mpris): add Linux MPRIS2 D-Bus server and tests
+- `601250f` feat(playback): add snapshot Subscribe notifications to Controller
 - `91d1825` docs: record Phase 6C shade mode and double-size D button
 - `698e468` feat(ui): implement shade mode and clutter-bar double-size D button
 - `3f206eb` feat(assets): add shade mode and clutter bar sprites to dev-skin

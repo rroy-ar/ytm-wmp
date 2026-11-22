@@ -6,7 +6,7 @@ Guidelines for coding agents working in `ytm-wmp`.
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-catalog`, `-query`, `-playlist`, `-autoplay`, `-debug`), `deps.CheckPath`, wiring, signal handling, `ebiten.RunGame` |
+| `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-catalog`, `-query`, `-playlist`, `-autoplay`, `-mpris`, `-debug`), `deps.CheckPath`, wiring, signal handling, `ebiten.RunGame` |
 | `cmd/ytmctl/` | Terminal debug CLI for `search`, `track`, `playlist`, `radio`, and `artwork` with `-catalog ytmusic\|ytdlp` |
 | `internal/model/` | Shared domain types (`Track`, `StreamInfo`) and YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`, `DefaultThumbnailURL`) |
 | `internal/deps/` | Startup discovery and version checks for `yt-dlp` and `ffmpeg` |
@@ -17,6 +17,7 @@ Guidelines for coding agents working in `ytm-wmp`.
 | `internal/artwork/` | Pure-Go thumbnail fetch, JPEG/PNG/WebP decode, `64x64`/`300x300` bilinear resize, atomic disk cache + stats/pruning, in-memory LRU, and `Placeholder` |
 | `internal/store/` | Versioned `config.json` schema/migration, `TrackRef` queue persistence, debounced saver, and `AtomicWriteFile` |
 | `internal/m3u/` | `#EXTM3U` import/export of YouTube URLs and video IDs |
+| `internal/mpris/` | Pure-Go Linux MPRIS2 D-Bus server (`org.mpris.MediaPlayer2`) translating desktop media keys/controls and emitting `PropertiesChanged` / `Seeked` signals |
 | `internal/audio/` | `ffmpeg` `f32le` 48 kHz stereo PCM `Source` (`Opener`), 10-band biquad `EQReader`, `VisTapReader`/FFT, and `ebiten/v2/audio` sink (`EbitenSink`) |
 | `internal/playback/` | Headless actor `Controller`, explicit state transition table, queue (history, shuffle bag, repeat), seek-by-reopen, prefetch, radio autoplay, and error taxonomy |
 | `internal/skin/` | Pure-Go `.wsz`/`.zip`/directory skin loader, security/size caps, `skin.xml` modern-skin rejection, alpha fix, `pledit.txt`/`viscolor.txt`, and canonical sprite table |

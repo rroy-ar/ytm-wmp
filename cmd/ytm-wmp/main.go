@@ -26,6 +26,7 @@ import (
 	"github.com/rroy-ar/ytm-wmp/internal/deps"
 	"github.com/rroy-ar/ytm-wmp/internal/m3u"
 	"github.com/rroy-ar/ytm-wmp/internal/model"
+	"github.com/rroy-ar/ytm-wmp/internal/mpris"
 	"github.com/rroy-ar/ytm-wmp/internal/playback"
 	"github.com/rroy-ar/ytm-wmp/internal/skin"
 	"github.com/rroy-ar/ytm-wmp/internal/store"
@@ -77,6 +78,7 @@ func run() error {
 	queryFlag := flag.String("query", "", "initial catalog search query")
 	playlistFlag := flag.String("playlist", "", "YouTube/YTM playlist URL or ID to load at startup")
 	autoplayFlag := flag.Bool("autoplay", true, "queue YouTube Music radio suggestions when the queue ends")
+	mprisFlag := flag.Bool("mpris", true, "enable Linux MPRIS D-Bus media controls")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
@@ -210,8 +212,24 @@ func run() error {
 		gameOpts = append(gameOpts, ui.WithStartupWarning(strings.Join(startupWarnings, "; ")))
 	}
 
-	game := ui.NewGame(ctx, s, ctrl, sink, gameOpts...)
+	appCtx, appCancel := context.WithCancel(ctx)
+	defer appCancel()
+
+	game := ui.NewGame(appCtx, s, ctrl, sink, gameOpts...)
 	defer game.Close()
+
+	if *mprisFlag {
+		mprisSrv, mprisErr := mpris.New(ctrl, mpris.WithQuit(appCancel))
+		if mprisErr != nil {
+			slog.Warn("mpris unavailable; continuing without D-Bus media controls", "err", mprisErr)
+		} else {
+			defer func() {
+				if err := mprisSrv.Close(); err != nil {
+					slog.Debug("mpris close failed", "err", err)
+				}
+			}()
+		}
+	}
 
 	applyInitialPlaybackState(ctrl, cfg, tracks, queueIdx)
 

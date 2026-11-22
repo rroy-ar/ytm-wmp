@@ -14,6 +14,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/rroy-ar/ytm-wmp/assets"
 	"github.com/rroy-ar/ytm-wmp/internal/artwork"
 	"github.com/rroy-ar/ytm-wmp/internal/model"
 	"github.com/rroy-ar/ytm-wmp/internal/playback"
@@ -801,4 +802,24 @@ func (c *fakeAudioLifecycle) closeCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closes
+}
+
+func TestResetToDevSkinFallsBackToEmbeddedFS(t *testing.T) {
+	g := NewGame(
+		context.Background(),
+		nil,
+		newFakeController(),
+		&fakeAudioLifecycle{},
+		WithDefaultSkinPath("/nonexistent/dev-skin"),
+		WithDefaultSkinFS(assets.DevSkinFS()),
+	)
+	defer g.Close()
+
+	g.resetToDevSkin()
+	if g.skin == nil {
+		t.Fatalf("expected embedded dev-skin to load; errText=%q", g.errText)
+	}
+	if g.skinPath != "" || g.skinName != "dev-skin" {
+		t.Fatalf("skinPath=%q skinName=%q, want empty path and dev-skin", g.skinPath, g.skinName)
+	}
 }

@@ -182,6 +182,24 @@ func TestLoadStartupSkinFallsBackWhenSavedSkinMissing(t *testing.T) {
 	}
 }
 
+func TestLoadStartupSkinFallsBackToEmbeddedDevSkin(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	s, usedPath, warn, err := loadStartupSkin("", "")
+	if err != nil || s == nil {
+		t.Fatalf("loadStartupSkin embedded fallback failed: %v", err)
+	}
+	if usedPath != "" {
+		t.Fatalf("usedPath = %q, want empty for embedded fallback", usedPath)
+	}
+	if warn != "" {
+		t.Fatalf("warn = %q, want empty", warn)
+	}
+	if got := skinDisplayName(usedPath); got != "dev-skin" {
+		t.Fatalf("skinDisplayName(%q) = %q, want dev-skin", usedPath, got)
+	}
+}
+
 func TestCheckToolStatusReportsMissingDependencyActionably(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	st := checkToolStatus(context.Background(), "yt-dlp", "")

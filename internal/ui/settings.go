@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io/fs"
 	"math"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,7 @@ type cacheStatsResult struct {
 
 type settingsState struct {
 	defaultSkinPath string
+	defaultSkinFS   fs.FS
 	configPath      string
 	scale           float64
 	bufferMs        int
@@ -355,11 +357,34 @@ func (g *Game) clearArtworkCacheAsync() {
 }
 
 func (g *Game) resetToDevSkin() {
-	path := g.defaultSkinPath
-	if path == "" {
-		path = filepath.Join("assets", "dev-skin")
+	var (
+		loaded   *skin.Skin
+		err      error
+		usedPath string
+		usedName string
+	)
+	if g.defaultSkinPath != "" {
+		loaded, err = skin.Open(g.defaultSkinPath)
+		if err == nil {
+			usedPath = g.defaultSkinPath
+			usedName = filepath.Base(usedPath)
+		}
 	}
-	loaded, err := skin.Open(path)
+	if loaded == nil && g.defaultSkinFS != nil {
+		loaded, err = skin.OpenFS(g.defaultSkinFS)
+		if err == nil {
+			usedPath = ""
+			usedName = "dev-skin"
+		}
+	}
+	if loaded == nil && g.defaultSkinPath == "" {
+		fallback := filepath.Join("assets", "dev-skin")
+		loaded, err = skin.Open(fallback)
+		if err == nil {
+			usedPath = fallback
+			usedName = filepath.Base(fallback)
+		}
+	}
 	if err != nil {
 		g.setError(err.Error())
 		return
@@ -368,8 +393,8 @@ func (g *Game) resetToDevSkin() {
 		g.view.Deallocate()
 	}
 	g.skin = loaded
-	g.skinPath = path
-	g.skinName = filepath.Base(path)
+	g.skinPath = usedPath
+	g.skinName = usedName
 	g.view = skinview.New(loaded)
 	g.clearError()
 	g.markConfigDirty()

@@ -18,6 +18,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/rroy-ar/ytm-wmp/assets"
 	"github.com/rroy-ar/ytm-wmp/internal/artwork"
 	"github.com/rroy-ar/ytm-wmp/internal/audio"
 	"github.com/rroy-ar/ytm-wmp/internal/catalog"
@@ -140,7 +141,11 @@ func run() error {
 	if skinWarn != "" {
 		startupWarnings = append(startupWarnings, skinWarn)
 	}
-	slog.Info("skin loaded", "path", skinPath, "sheets", s.SheetNames())
+	logSkinPath := skinPath
+	if logSkinPath == "" {
+		logSkinPath = "embedded:dev-skin"
+	}
+	slog.Info("skin loaded", "path", logSkinPath, "sheets", s.SheetNames())
 	if warnings := s.Warnings(); len(warnings) > 0 {
 		slog.Warn("skin loaded with warnings", "warnings", warnings)
 	}
@@ -190,9 +195,10 @@ func run() error {
 		ui.WithInitialConfig(cfg),
 		ui.WithConfigPath(configPath),
 		ui.WithInitialQuery(*queryFlag),
-		ui.WithSkinName(filepath.Base(skinPath)),
+		ui.WithSkinName(skinDisplayName(skinPath)),
 		ui.WithSkinPath(skinPath),
 		ui.WithDefaultSkinPath(chooseSkin("")),
+		ui.WithDefaultSkinFS(assets.DevSkinFS()),
 		ui.WithWindowResizer(ebiten.SetWindowSize),
 		ui.WithEQPath(userConfigPath("eq.json")),
 		ui.WithPlaylistPath(userConfigPath("playlist.m3u")),
@@ -282,7 +288,21 @@ func loadStartupSkin(explicitSkin, savedSkin string) (loaded *skin.Skin, usedPat
 	}
 	fallback := chooseSkin("")
 	s, err := skin.Open(fallback)
-	return s, fallback, warning, err
+	if err == nil {
+		return s, fallback, warning, nil
+	}
+	embedded, embErr := skin.OpenFS(assets.DevSkinFS())
+	if embErr == nil {
+		return embedded, "", warning, nil
+	}
+	return nil, fallback, warning, err
+}
+
+func skinDisplayName(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return "dev-skin"
+	}
+	return filepath.Base(path)
 }
 
 func resolveStartupQueue(ctx context.Context, cat catalog.Catalog, flagTargets, extra []string, playlistTarget, initialQuery string, cfg store.Config, configExisted bool) ([]model.Track, int, error) {

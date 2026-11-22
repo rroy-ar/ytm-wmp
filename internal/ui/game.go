@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io/fs"
 	"log/slog"
 	"math"
 	"path/filepath"
@@ -170,6 +171,12 @@ func WithBufferApplier(fn func(time.Duration)) GameOption {
 // WithDefaultSkinPath sets the bundled dev-skin path used by Settings reset.
 func WithDefaultSkinPath(path string) GameOption {
 	return func(g *Game) { g.defaultSkinPath = path }
+}
+
+// WithDefaultSkinFS sets an embedded filesystem fallback for resetting to the
+// built-in dev skin when defaultSkinPath is unavailable on disk.
+func WithDefaultSkinFS(fsys fs.FS) GameOption {
+	return func(g *Game) { g.defaultSkinFS = fsys }
 }
 
 // WithConfigPath configures where global application state is atomically persisted.

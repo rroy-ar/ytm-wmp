@@ -310,3 +310,85 @@ func (b *binaryCaptureRunner) Output(ctx context.Context, name string, args ...s
 	}
 	return b.inner.Output(ctx, name, args...)
 }
+
+type ctxRunner struct {
+	fn func(ctx context.Context) ([]byte, []byte, error)
+}
+
+func (r *ctxRunner) Output(ctx context.Context, _ string, _ ...string) ([]byte, []byte, error) {
+	return r.fn(ctx)
+}
+
+func TestResolveAppliesDefaultTimeout(t *testing.T) {
+	var hasDeadline bool
+	var remaining time.Duration
+	runner := &ctxRunner{fn: func(ctx context.Context) ([]byte, []byte, error) {
+		var deadline time.Time
+		deadline, hasDeadline = ctx.Deadline()
+		if hasDeadline {
+			remaining = time.Until(deadline)
+		}
+		return []byte("https://stream.example/audio\n"), nil, nil
+	}}
+
+	resolver := New(WithRunner(runner))
+	if _, err := resolver.Resolve(context.Background(), "dQw4w9WgXcQ"); err != nil {
+		t.Fatalf("Resolve = %v", err)
+	}
+	if !hasDeadline {
+		t.Fatal("expected Resolve context to have a deadline")
+	}
+	if remaining <= 0 || remaining > DefaultResolveTimeout+time.Second {
+		t.Fatalf("deadline remaining = %v, want near %v", remaining, DefaultResolveTimeout)
+	}
+}
+
+func TestResolveTimeoutZeroDisablesDeadline(t *testing.T) {
+	var hasDeadline bool
+	runner := &ctxRunner{fn: func(ctx context.Context) ([]byte, []byte, error) {
+		_, hasDeadline = ctx.Deadline()
+		return []byte("https://stream.example/audio\n"), nil, nil
+	}}
+
+	resolver := New(WithRunner(runner), WithTimeout(0))
+	if _, err := resolver.Resolve(context.Background(), "dQw4w9WgXcQ"); err != nil {
+		t.Fatalf("Resolve = %v", err)
+	}
+	if hasDeadline {
+		t.Fatal("expected WithTimeout(0) to leave context without deadline")
+	}
+}
+
+func TestResolveTimeoutReturnsDeadlineExceeded(t *testing.T) {
+	runner := &ctxRunner{fn: func(ctx context.Context) ([]byte, []byte, error) {
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}}
+
+	resolver := New(WithRunner(runner), WithTimeout(20*time.Millisecond))
+	_, err := resolver.Resolve(context.Background(), "dQw4w9WgXcQ")
+	if !errors.Is(err, ErrResolve) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want ErrResolve + context.DeadlineExceeded", err)
+	}
+}
+
+func TestResolveTimeoutKillsRealSubprocess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fake yt-dlp is not available on Windows")
+	}
+
+	script := filepath.Join(t.TempDir(), "slow-yt-dlp")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec sleep 60\n"), 0o700); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	resolver := New(WithBinary(script), WithTimeout(50*time.Millisecond))
+	start := time.Now()
+	_, err := resolver.Resolve(context.Background(), "dQw4w9WgXcQ")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("timed-out Resolve took %v, expected prompt kill", elapsed)
+	}
+}

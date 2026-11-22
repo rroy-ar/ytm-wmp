@@ -22,7 +22,12 @@ const (
 	// DefaultTTL mirrors the PoC: YouTube signs URLs for roughly six hours, so
 	// reuse them for five and resolve again before the signature is likely to
 	// expire.
-	DefaultTTL    = 5 * time.Hour
+	DefaultTTL = 5 * time.Hour
+
+	// DefaultResolveTimeout caps a single yt-dlp -g invocation so a stalled
+	// network request cannot hang playback resolution indefinitely.
+	DefaultResolveTimeout = 30 * time.Second
+
 	defaultBinary = "yt-dlp"
 
 	// DefaultMaxStdoutBytes caps yt-dlp -g stdout so runaway output cannot OOM.
@@ -114,10 +119,11 @@ type cachedStream struct {
 
 // Resolver resolves targets and caches the resulting URL by video ID.
 type Resolver struct {
-	runner Runner
-	binary string
-	ttl    time.Duration
-	now    func() time.Time
+	runner  Runner
+	binary  string
+	ttl     time.Duration
+	timeout time.Duration
+	now     func() time.Time
 
 	mu    sync.Mutex
 	cache map[string]cachedStream
@@ -149,6 +155,12 @@ func WithTTL(ttl time.Duration) Option {
 	return func(r *Resolver) { r.ttl = ttl }
 }
 
+// WithTimeout sets the maximum duration for a single yt-dlp -g resolution.
+// d <= 0 disables the per-resolve timeout.
+func WithTimeout(d time.Duration) Option {
+	return func(r *Resolver) { r.timeout = d }
+}
+
 // WithBinary sets the yt-dlp executable path.
 func WithBinary(path string) Option {
 	return func(r *Resolver) {
@@ -161,11 +173,12 @@ func WithBinary(path string) Option {
 // New creates a Resolver with production defaults.
 func New(opts ...Option) *Resolver {
 	r := &Resolver{
-		runner: ExecRunner{},
-		binary: defaultBinary,
-		ttl:    DefaultTTL,
-		now:    time.Now,
-		cache:  make(map[string]cachedStream),
+		runner:  ExecRunner{},
+		binary:  defaultBinary,
+		ttl:     DefaultTTL,
+		timeout: DefaultResolveTimeout,
+		now:     time.Now,
+		cache:   make(map[string]cachedStream),
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -208,6 +221,7 @@ func (r *Resolver) Resolve(ctx context.Context, target string) (model.StreamInfo
 	r.mu.Lock()
 	cached, ok := r.cache[key]
 	binary := r.binary
+	timeout := r.timeout
 	r.mu.Unlock()
 	if ok && now.Before(cached.expires) {
 		return cached.info, nil
@@ -220,10 +234,20 @@ func (r *Resolver) Resolve(ctx context.Context, target string) (model.StreamInfo
 		"-g", resolveTarget(target),
 	}
 
-	stdout, stderr, err := r.runner.Output(ctx, binary, args...)
+	runCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	stdout, stderr, err := r.runner.Output(runCtx, binary, args...)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return model.StreamInfo{}, ctxErr
+		}
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return model.StreamInfo{}, fmt.Errorf("%w for %q: %w", ErrResolve, target, context.DeadlineExceeded)
 		}
 		return model.StreamInfo{}, resolveError(target, err, stderr)
 	}

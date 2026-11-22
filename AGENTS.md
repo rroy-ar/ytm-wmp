@@ -6,7 +6,7 @@ Guidelines for coding agents working in `ytm-wmp`.
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-catalog`, `-query`, `-playlist`, `-autoplay`, `-mpris`, `-debug`), `deps.CheckPath`, wiring, signal handling, `ebiten.RunGame` |
+| `cmd/ytm-wmp/` | Desktop player entrypoint: flags (`-url`, `-skin`, `-catalog`, `-query`, `-playlist`, `-autoplay`, `-mpris`, `-version`, `-debug`), `deps.CheckPath`, wiring, signal handling, `ebiten.RunGame` |
 | `cmd/ytmctl/` | Terminal debug CLI for `search`, `track`, `playlist`, `radio`, and `artwork` with `-catalog ytmusic\|ytdlp` |
 | `internal/model/` | Shared domain types (`Track`, `StreamInfo`) and YouTube ID helpers (`VideoID`, `IsVideoID`, `NormalizeTrackID`, `DefaultThumbnailURL`) |
 | `internal/deps/` | Startup discovery and version checks for `yt-dlp` and `ffmpeg` |
@@ -23,7 +23,8 @@ Guidelines for coding agents working in `ytm-wmp`.
 | `internal/skin/` | Pure-Go `.wsz`/`.zip`/directory skin loader, security/size caps, `skin.xml` modern-skin rejection, alpha fix, `pledit.txt`/`viscolor.txt`, and canonical sprite table |
 | `internal/ui/` | Ebitengine `Game`, immediate-mode hit testing (`Pointer`), docked rack (Main/EQ/Playlist/Browser/Settings, WindowShade, visualizer, toasts), debug overlay |
 | `internal/ui/skinview/` | One-time GPU sheet upload (`ebiten.NewImageFromImage`) and `SubImage` cache with magenta placeholders |
-| `assets/dev-skin/` | Original classic-dimension BMPs used when `-skin` is omitted |
+| `assets/dev-skin/` | Original classic-dimension BMPs embedded via `assets/devskin.go` (`DevSkinFS`) when `-skin` is omitted |
+| `packaging/` | Linux `.desktop` entry, SVG icon, and `install.sh` (paired with root `Makefile`) |
 | `docs/plan/` | Active execution plan and project status |
 | `docs/adr/` | Architecture Decision Records |
 

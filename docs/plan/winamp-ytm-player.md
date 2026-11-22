@@ -1117,13 +1117,17 @@ Each chunk must have a visible/audible demo and not regress v1.
   (HTTP 429 rate limit, `context.DeadlineExceeded`, bot verification,
   age-restricted, members-only), and `TestEbitenSinkCancelUnblocksStalledReader`
   stalled-reader teardown verification.
-- Linux CI (done): `.github/workflows/ci.yml` runs `gofmt`, `go vet`, `go build`,
-  `xvfb-run -a go test ./...`, `xvfb-run -a go test -race ./...`, and a 10s
-  `FuzzSkinOpen` smoke pass with X11/GL dev headers, `xvfb`, and `dbus`.
+- Linux CI & packaging (done): `.github/workflows/ci.yml` runs `gofmt`, `go vet`,
+  `go build`, `xvfb-run -a go test ./...`, `xvfb-run -a go test -race ./...`, and
+  a 10s `FuzzSkinOpen` smoke pass with X11/GL dev headers, `xvfb`, and `dbus`;
+  `assets/devskin.go` embeds `dev-skin` for standalone installed binaries,
+  `cmd/ytm-wmp` and `cmd/ytmctl` expose `-version` via `-ldflags`,
+  `packaging/` (`ytm-wmp.desktop`, `ytm-wmp.svg`, `install.sh`) + `Makefile`
+  handle Linux installation, and `.github/workflows/release.yml` builds release
+  tarballs + `SHA256SUMS` on `v*` tags.
 - Remaining: performance profiling (`pprof` CPU/heap, frame budget, `Draw`
-  allocation audit), 20-skin `.wsz` corpus smoke check, Linux packaging
-  (embedded `dev-skin`, `.desktop`/icon/Makefile), README troubleshooting/known
-  limitations, and `v0.1.0` tag.
+  allocation audit), 20-skin `.wsz` corpus smoke check, README troubleshooting/
+  known limitations, and `v0.1.0` tag.
 
 **Verify:** v0.1 builds on Linux; a clean machine can install
 deps, launch, load a skin, search, and play; 20-skin smoke test passes; known
@@ -1257,6 +1261,11 @@ only formats debug/error text when those overlays are visible.
 
 Recent trail as of this update (newest first):
 
+- `a20f85c` ci: add Linux release tarball workflow for version tags
+- `061163a` feat(packaging): add desktop entry, SVG icon, install script, and Makefile
+- `c25bd65` feat(cmd): add -version flag and ldflags version support
+- `37c0030` feat(assets,ui,cmd): embed dev-skin for standalone binary installs
+- `bc13118` Merge branch 'main' of github.com:rroy-ar/ytm-wmp (demo video in README)
 - `e9b2ac0` ci: add Linux GitHub Actions workflow for build, tests, race, and fuzz
 - `545e307` test(audio): verify teardown unblocks stalled reader without deadlock
 - `fd8407b` feat(deps,playback,cmd): warn on outdated yt-dlp and refine error taxonomy

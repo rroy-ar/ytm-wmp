@@ -101,9 +101,11 @@ cd ytm-wmp
 # Run directly with the bundled dev skin
 go run ./cmd/ytm-wmp
 
-# Or build binaries
-go build -o ytm-wmp ./cmd/ytm-wmp
-go build -o ytmctl ./cmd/ytmctl
+# Or build binaries and install locally (binaries + desktop entry + icon)
+make build
+make install PREFIX=~/.local
+
+# Or run a standalone binary directly
 ./ytm-wmp
 ```
 
@@ -151,6 +153,7 @@ go run ./cmd/ytm-wmp -autoplay=false -debug
 | `-url` | *(demo track)* | Repeatable video ID, watch URL, or search query for the initial queue (also accepts positional args) |
 | `-autoplay` | `true` | Automatically queue YouTube Music Up Next radio tracks when the queue ends |
 | `-mpris` | `true` | Enable Linux MPRIS2 D-Bus media controls (`org.mpris.MediaPlayer2.ytm_wmp`) |
+| `-version` | `false` | Print version and exit |
 | `-debug` | `false` | Enable verbose debug logging |
 
 > **Tip:** Even with `-catalog ytmusic`, prefixing any search query in the UI with `yt:` or `ytdlp:` routes that query to regular YouTube via `yt-dlp` for videos not indexed on YouTube Music.
@@ -373,7 +376,13 @@ internal/
 └── ui/                    # Ebitengine Game loop, immediate-mode input, docked panels & toasts
     └── skinview/          # One-time GPU sheet upload and SubImage / glyph / slider caches
 assets/
+├── devskin.go             # Embedded dev-skin fs.FS for standalone binary installs
 └── dev-skin/              # Original classic-dimension BMPs (no copyrighted skins)
+packaging/
+├── ytm-wmp.desktop        # FreeDesktop application entry
+├── ytm-wmp.svg            # Application icon
+└── install.sh             # User/system install & uninstall script
+Makefile                   # build, test, check, install, uninstall targets
 docs/
 ├── adr/                   # Architecture Decision Records (0001–0003)
 └── plan/                  # Detailed design & execution plan
@@ -395,7 +404,7 @@ docs/
 - [ ] Custom `.cur` cursor support.
 - [ ] MilkDrop visualizer support.
 - [ ] Gapless playback.
-- [ ] Performance profiling, Linux packaging (`.desktop` / icon), and `v0.1` release.
+- [ ] Performance profiling and `v0.1` release.
 
 ### Explicit Non-Goals
 - **Windows / macOS support** — targeted strictly at Linux (X11 / Wayland).

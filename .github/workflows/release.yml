@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux audio/windowing build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev \
+            libxi-dev libxrender-dev libgl1-mesa-dev
+
+      - name: Build release binaries
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o ytm-wmp ./cmd/ytm-wmp
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o ytmctl ./cmd/ytmctl
+          ./ytm-wmp -version
+          ./ytmctl -version
+
+      - name: Package tarball and checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          PKG="ytm-wmp-${VERSION}-linux-amd64"
+          STAGE="dist/${PKG}"
+          mkdir -p "${STAGE}/packaging"
+          cp ytm-wmp ytmctl README.md LICENSE THIRD_PARTY_NOTICES.md "${STAGE}/"
+          cp packaging/ytm-wmp.desktop packaging/ytm-wmp.svg "${STAGE}/packaging/"
+          install -m 755 packaging/install.sh "${STAGE}/install.sh"
+          tar -C dist -czf "dist/${PKG}.tar.gz" "${PKG}"
+          (cd dist && sha256sum "${PKG}.tar.gz" > SHA256SUMS)
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          gh release create "${VERSION}" \
+            "dist/ytm-wmp-${VERSION}-linux-amd64.tar.gz" \
+            "dist/SHA256SUMS" \
+            --title "ytm-wmp ${VERSION}" \
+            --generate-notes

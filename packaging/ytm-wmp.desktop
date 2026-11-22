@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ytm-wmp
+GenericName=YouTube Music Player
+Comment=Classic Winamp-skinned YouTube Music desktop player
+Exec=ytm-wmp %U
+Icon=ytm-wmp
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;youtube;winamp;player;wsz;
+MimeType=audio/x-mpegurl;application/vnd.apple.mpegurl;
+StartupWMClass=ytm-wmp

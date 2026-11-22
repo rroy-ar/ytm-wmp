@@ -556,3 +556,130 @@ func TestEbitenSinkEQAndVisTap(t *testing.T) {
 		t.Fatalf("expected visRing reset after teardown, got %d samples", n)
 	}
 }
+
+type stalledSource struct {
+	recorder    *recorder
+	reading     chan struct{}
+	readingOnce sync.Once
+	closed      chan struct{}
+	done        chan struct{}
+	closeOnce   sync.Once
+}
+
+func newStalledSource(rec *recorder) *stalledSource {
+	return &stalledSource{
+		recorder: rec,
+		reading:  make(chan struct{}),
+		closed:   make(chan struct{}),
+		done:     make(chan struct{}),
+	}
+}
+
+func (s *stalledSource) Read([]byte) (int, error) {
+	s.readingOnce.Do(func() { close(s.reading) })
+	<-s.closed
+	return 0, io.EOF
+}
+
+func (s *stalledSource) Err() error            { return nil }
+func (s *stalledSource) Frames() int64         { return 0 }
+func (s *stalledSource) Done() <-chan struct{} { return s.done }
+
+func (s *stalledSource) Close() error {
+	s.closeOnce.Do(func() {
+		if s.recorder != nil {
+			s.recorder.add("source.close")
+		}
+		close(s.closed)
+		close(s.done)
+	})
+	return nil
+}
+
+type stalledReaderPlayer struct {
+	r          io.Reader
+	recorder   *recorder
+	playOnce   sync.Once
+	stopOnce   sync.Once
+	stopCh     chan struct{}
+	readerDone chan struct{}
+}
+
+func newStalledReaderPlayer(r io.Reader, rec *recorder) *stalledReaderPlayer {
+	return &stalledReaderPlayer{
+		r:          r,
+		recorder:   rec,
+		stopCh:     make(chan struct{}),
+		readerDone: make(chan struct{}),
+	}
+}
+
+func (p *stalledReaderPlayer) Play() {
+	p.recorder.add("player.play")
+	p.playOnce.Do(func() {
+		go func() {
+			defer close(p.readerDone)
+			buf := make([]byte, FrameSize)
+			for {
+				select {
+				case <-p.stopCh:
+					return
+				default:
+				}
+				if _, err := p.r.Read(buf); err != nil {
+					return
+				}
+			}
+		}()
+	})
+}
+
+func (p *stalledReaderPlayer) Pause() { p.recorder.add("player.pause") }
+
+func (p *stalledReaderPlayer) PauseAndStopReading() {
+	p.recorder.add("player.stop-reading")
+	p.stopOnce.Do(func() { close(p.stopCh) })
+	<-p.readerDone
+}
+
+func (p *stalledReaderPlayer) Position() time.Duration { return 0 }
+func (p *stalledReaderPlayer) SetVolume(float64)       {}
+func (p *stalledReaderPlayer) Volume() float64         { return 1 }
+
+func TestEbitenSinkCancelUnblocksStalledReader(t *testing.T) {
+	rec := &recorder{}
+	src := newStalledSource(rec)
+	var player *stalledReaderPlayer
+	sink := newEbitenSink(func(r io.Reader) (pcmPlayer, error) {
+		player = newStalledReaderPlayer(r, rec)
+		return player, nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- sink.Play(ctx, src) }()
+
+	select {
+	case <-src.reading:
+	case <-time.After(time.Second):
+		t.Fatal("audio reader never entered stalled Read")
+	}
+
+	cancel()
+	if err := waitPlayback(t, errCh); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Play = %v, want context.Canceled", err)
+	}
+
+	select {
+	case <-player.readerDone:
+	case <-time.After(time.Second):
+		t.Fatal("audio reader goroutine remained blocked after teardown")
+	}
+
+	events := rec.snapshot()
+	sourceIndex := indexOfEvent(events, "source.close")
+	stopIndex := indexOfEvent(events, "player.stop-reading")
+	if sourceIndex < 0 || stopIndex < 0 || sourceIndex > stopIndex {
+		t.Fatalf("events = %v, want source.close before player.stop-reading", events)
+	}
+}

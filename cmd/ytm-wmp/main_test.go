@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	catalogytdlp "github.com/rroy-ar/ytm-wmp/internal/catalog/ytdlp"
 	catalogytmusic "github.com/rroy-ar/ytm-wmp/internal/catalog/ytmusic"
+	"github.com/rroy-ar/ytm-wmp/internal/deps"
 	"github.com/rroy-ar/ytm-wmp/internal/model"
 	"github.com/rroy-ar/ytm-wmp/internal/playback"
 	"github.com/rroy-ar/ytm-wmp/internal/store"
@@ -185,6 +187,11 @@ func TestCheckToolStatusReportsMissingDependencyActionably(t *testing.T) {
 	st := checkToolStatus(context.Background(), "yt-dlp", "")
 	if st.OK || !strings.Contains(st.Error, "yt-dlp") || !strings.Contains(st.Hint, "yt-dlp") {
 		t.Fatalf("missing tool status = %+v", st)
+	}
+
+	warn := deps.OutdatedYTDLPWarning("2024.01.01", time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC))
+	if !strings.Contains(warn, "yt-dlp -U") {
+		t.Fatalf("outdated yt-dlp warning = %q, want update hint", warn)
 	}
 }
 

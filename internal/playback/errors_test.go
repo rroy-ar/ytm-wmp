@@ -54,6 +54,48 @@ func TestClassifyError(t *testing.T) {
 			contains: "Network",
 		},
 		{
+			name:     "resolve deadline exceeded",
+			err:      context.DeadlineExceeded,
+			wantKind: ErrNetwork,
+			contains: "timed out",
+		},
+		{
+			name:     "yt-dlp rate limit 429",
+			err:      errors.New("yt-dlp: ERROR: HTTP Error 429: Too Many Requests"),
+			wantKind: ErrNetwork,
+			contains: "rate-limited",
+		},
+		{
+			name:     "ffmpeg rate limit 429",
+			err:      &audio.ProcessError{Err: errors.New("exit status 1"), Stderr: "HTTP error 429 Too Many Requests"},
+			wantKind: ErrNetwork,
+			contains: "rate-limited",
+		},
+		{
+			name:     "bot verification check",
+			err:      errors.New("ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you're not a bot"),
+			wantKind: ErrUnavailable,
+			contains: "bot verification",
+		},
+		{
+			name:     "age restricted",
+			err:      errors.New("ERROR: [youtube] id: Sign in to confirm your age. This video may be inappropriate"),
+			wantKind: ErrUnavailable,
+			contains: "age-restricted",
+		},
+		{
+			name:     "members only",
+			err:      errors.New("ERROR: [youtube] id: Join this channel to get access to members-only content"),
+			wantKind: ErrUnavailable,
+			contains: "members-only",
+		},
+		{
+			name:     "webpage error does not trigger age-restricted",
+			err:      errors.New("yt-dlp: ERROR: failed to parse webpage metadata"),
+			wantKind: ErrUnavailable,
+			contains: "Could not play track",
+		},
+		{
 			name:     "unavailable track",
 			err:      errors.New("yt-dlp could not resolve stream: Video unavailable"),
 			wantKind: ErrUnavailable,

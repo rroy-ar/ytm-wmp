@@ -10,9 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// DefaultYTDLPMaxAge is the age threshold after which yt-dlp is considered
+// stale enough to warrant a startup update hint.
+const DefaultYTDLPMaxAge = 180 * 24 * time.Hour
 
 // Tool describes an executable found on PATH.
 type Tool struct {
@@ -116,4 +121,56 @@ func versionArgs(path string) []string {
 func IsMissing(err error) bool {
 	var missing *MissingError
 	return errors.As(err, &missing)
+}
+
+// ParseYTDLPVersionDate parses yt-dlp's YYYY.MM.DD[.patch] version string into
+// a UTC date. It returns false for unparseable or non-date version strings.
+func ParseYTDLPVersionDate(version string) (time.Time, bool) {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return time.Time{}, false
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) < 3 {
+		return time.Time{}, false
+	}
+	if len(parts[0]) != 4 || len(parts[1]) != 2 || len(parts[2]) != 2 {
+		return time.Time{}, false
+	}
+	y, errY := strconv.Atoi(parts[0])
+	m, errM := strconv.Atoi(parts[1])
+	d, errD := strconv.Atoi(parts[2])
+	if errY != nil || errM != nil || errD != nil {
+		return time.Time{}, false
+	}
+	if y < 2020 || m < 1 || m > 12 || d < 1 || d > 31 {
+		return time.Time{}, false
+	}
+	t := time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
+	if t.Year() != y || int(t.Month()) != m || t.Day() != d {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// IsOutdatedYTDLP reports whether version is older than maxAge relative to now.
+// When maxAge <= 0, DefaultYTDLPMaxAge is used. Unparseable versions return false.
+func IsOutdatedYTDLP(version string, now time.Time, maxAge time.Duration) bool {
+	if maxAge <= 0 {
+		maxAge = DefaultYTDLPMaxAge
+	}
+	releaseDate, ok := ParseYTDLPVersionDate(version)
+	if !ok {
+		return false
+	}
+	return now.UTC().Sub(releaseDate) > maxAge
+}
+
+// OutdatedYTDLPWarning returns an actionable startup warning when yt-dlp is
+// older than DefaultYTDLPMaxAge, or "" otherwise.
+func OutdatedYTDLPWarning(version string, now time.Time) string {
+	if !IsOutdatedYTDLP(version, now, DefaultYTDLPMaxAge) {
+		return ""
+	}
+	return fmt.Sprintf("yt-dlp %s is over 6 months old; run 'yt-dlp -U' or update via your package manager if playback fails", strings.TrimSpace(version))
 }

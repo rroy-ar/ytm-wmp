@@ -75,6 +75,13 @@ func ClassifyError(err error) *Error {
 
 	var procErr *audio.ProcessError
 	if errors.As(err, &procErr) {
+		if looksLikeRateLimit(lower) {
+			return &Error{
+				Kind:        ErrNetwork,
+				Cause:       err,
+				UserMessage: "YouTube rate-limited the audio stream (HTTP 429). Wait a moment and retry.",
+			}
+		}
 		if looksLikeNetworkError(lower) {
 			return &Error{
 				Kind:        ErrNetwork,
@@ -89,12 +96,52 @@ func ClassifyError(err error) *Error {
 		}
 	}
 
+	if looksLikeRateLimit(lower) {
+		return &Error{
+			Kind:        ErrNetwork,
+			Cause:       err,
+			UserMessage: "YouTube rate-limited the request (HTTP 429). Wait a moment and try again.",
+		}
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &Error{
+			Kind:        ErrNetwork,
+			Cause:       err,
+			UserMessage: "Request timed out while resolving or streaming audio. Check your connection and retry.",
+		}
+	}
+
 	var netErr net.Error
-	if errors.As(err, &netErr) || errors.Is(err, context.DeadlineExceeded) || looksLikeNetworkError(lower) {
+	if errors.As(err, &netErr) || looksLikeNetworkError(lower) {
 		return &Error{
 			Kind:        ErrNetwork,
 			Cause:       err,
 			UserMessage: fmt.Sprintf("Network error (%v). Check your connection or try again.", err),
+		}
+	}
+
+	if looksLikeBotCheck(lower) {
+		return &Error{
+			Kind:        ErrUnavailable,
+			Cause:       err,
+			UserMessage: "YouTube requested bot verification for this track. Try updating yt-dlp or playing another track.",
+		}
+	}
+
+	if looksLikeAgeRestricted(lower) {
+		return &Error{
+			Kind:        ErrUnavailable,
+			Cause:       err,
+			UserMessage: "Track is age-restricted and requires sign-in (unsupported in unauthenticated mode).",
+		}
+	}
+
+	if looksLikeMembersOnly(lower) {
+		return &Error{
+			Kind:        ErrUnavailable,
+			Cause:       err,
+			UserMessage: "Track is members-only and cannot be played without channel membership.",
 		}
 	}
 
@@ -145,20 +192,54 @@ func looksLikeNetworkError(lower string) bool {
 	return false
 }
 
+func looksLikeRateLimit(lower string) bool {
+	return containsAny(lower,
+		"http error 429",
+		"too many requests",
+		"rate limit",
+		"rate-limit",
+	)
+}
+
+func looksLikeBotCheck(lower string) bool {
+	return containsAny(lower,
+		"sign in to confirm you're not a bot",
+		"sign in to confirm you\u2019re not a bot",
+		"not a bot",
+	)
+}
+
+func looksLikeAgeRestricted(lower string) bool {
+	return containsAny(lower,
+		"confirm your age",
+		"age-restricted",
+		"age restricted",
+	)
+}
+
+func looksLikeMembersOnly(lower string) bool {
+	return containsAny(lower,
+		"members-only",
+		"members only",
+		"join this channel",
+	)
+}
+
 func looksLikeUnavailableError(lower string) bool {
-	patterns := []string{
+	return containsAny(lower,
 		"video unavailable",
 		"private video",
-		"members-only",
 		"sign in to confirm",
-		"age",
 		"copyright",
 		"not available",
 		"unsupported url",
 		"could not resolve stream",
-	}
+	)
+}
+
+func containsAny(s string, patterns ...string) bool {
 	for _, p := range patterns {
-		if strings.Contains(lower, p) {
+		if strings.Contains(s, p) {
 			return true
 		}
 	}

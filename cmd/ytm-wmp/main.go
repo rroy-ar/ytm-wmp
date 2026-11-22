@@ -106,6 +106,9 @@ func run() error {
 	ffmpegStatus := checkToolStatus(ctx, "ffmpeg", cfg.ToolPaths.FFmpeg)
 	if !ytdlpStatus.OK {
 		slog.Warn("dependency missing", "tool", "yt-dlp", "err", ytdlpStatus.Error)
+	} else if warn := deps.OutdatedYTDLPWarning(ytdlpStatus.Version, time.Now()); warn != "" {
+		slog.Warn("outdated yt-dlp detected", "version", ytdlpStatus.Version)
+		startupWarnings = append(startupWarnings, warn)
 	}
 	if !ffmpegStatus.OK {
 		slog.Warn("dependency missing", "tool", "ffmpeg", "err", ffmpegStatus.Error)

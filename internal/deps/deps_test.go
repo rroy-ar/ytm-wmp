@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCheckFindsToolAndVersion(t *testing.T) {
@@ -116,5 +117,38 @@ func writeTool(t *testing.T, dir, name, content string) {
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatalf("writing %s: %v", path, err)
+	}
+}
+
+func TestParseAndCheckYTDLPVersionAge(t *testing.T) {
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+
+	if dt, ok := ParseYTDLPVersionDate("2026.10.22"); !ok || !dt.Equal(time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("ParseYTDLPVersionDate(2026.10.22) = (%v, %v)", dt, ok)
+	}
+	if dt, ok := ParseYTDLPVersionDate(" 2025.01.15.post1 "); !ok || dt.Year() != 2025 {
+		t.Fatalf("ParseYTDLPVersionDate with patch = (%v, %v)", dt, ok)
+	}
+	for _, invalid := range []string{"", "unknown", "2026.02.31", "2019.01.01", "2026.1.2", "1.2.3"} {
+		if _, ok := ParseYTDLPVersionDate(invalid); ok {
+			t.Fatalf("ParseYTDLPVersionDate(%q) = true, want false", invalid)
+		}
+	}
+
+	if IsOutdatedYTDLP("2026.10.22", now, 0) {
+		t.Fatal("recent yt-dlp reported outdated")
+	}
+	if IsOutdatedYTDLP("not-a-date", now, 0) {
+		t.Fatal("unparseable version must not report outdated")
+	}
+	if !IsOutdatedYTDLP("2025.01.15", now, 0) {
+		t.Fatal("2025.01.15 should be outdated in 2026-11")
+	}
+	if msg := OutdatedYTDLPWarning("2026.10.22", now); msg != "" {
+		t.Fatalf("OutdatedYTDLPWarning(recent) = %q, want empty", msg)
+	}
+	msg := OutdatedYTDLPWarning("2025.01.15", now)
+	if !strings.Contains(msg, "2025.01.15") || !strings.Contains(msg, "yt-dlp -U") {
+		t.Fatalf("OutdatedYTDLPWarning(old) = %q, want version and update hint", msg)
 	}
 }

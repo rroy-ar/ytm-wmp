@@ -255,4 +255,35 @@ func TestViewSliderFallbacksAndPartialSheets(t *testing.T) {
 			t.Fatal("balance thumbs should fall back to volume.bmp when balance.bmp is missing")
 		}
 	})
+
+	t.Run("275x294 eqmain omits graph sprites without falling back to window well", func(t *testing.T) {
+		dir := t.TempDir()
+		writeBMP(t, dir, "main.bmp", 275, 116)
+		writeBMP(t, dir, "eqmain.bmp", 275, 294)
+
+		s, err := skin.Open(dir)
+		if err != nil {
+			t.Fatalf("Open = %v", err)
+		}
+		view := New(s)
+
+		if !view.HasSprite(skin.EQWindowBackground) {
+			t.Fatal("EQWindowBackground should load on 275x294 eqmain.bmp")
+		}
+		if got, want := view.EQFrame(50).Bounds().Size(), image.Pt(14, 63); got != want {
+			t.Fatalf("EQFrame(50) size = %v, want %v", got, want)
+		}
+		if view.HasSprite(skin.EQGraphBackground) {
+			t.Fatal("EQGraphBackground should be absent for 275x294 eqmain.bmp")
+		}
+		if view.HasSprite(skin.EQGraphLineColors) {
+			t.Fatal("EQGraphLineColors should be absent for 275x294 eqmain.bmp")
+		}
+		if view.HasSprite(skin.EQPreampLine) {
+			t.Fatal("EQPreampLine should be absent for 275x294 eqmain.bmp")
+		}
+		if c := view.EQGraphColor(0); c.A != 0xff {
+			t.Fatalf("EQGraphColor(0) alpha = %d, want 255", c.A)
+		}
+	})
 }

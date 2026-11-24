@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"golang.org/x/image/bmp"
 
 	"github.com/rroy-ar/ytm-wmp/internal/m3u"
 	"github.com/rroy-ar/ytm-wmp/internal/model"
@@ -413,6 +414,86 @@ func TestMainSkinButtonOpensPickerAndReloadsSkin(t *testing.T) {
 	close(gate)
 	waitGameCondition(t, g, func() bool {
 		return !g.skinPickActive
+	})
+}
+
+func TestDrawEQWithPartial275x294Sheet(t *testing.T) {
+	writeBMP := func(t *testing.T, dir, name string, w, h int) {
+		t.Helper()
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := bmp.Encode(f, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+			_ = f.Close()
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("275x294 omits graph and preamp line", func(t *testing.T) {
+		dir := t.TempDir()
+		writeBMP(t, dir, "main.bmp", 275, 116)
+		writeBMP(t, dir, "eqmain.bmp", 275, 294)
+
+		s, err := skin.Open(dir)
+		if err != nil {
+			t.Fatalf("skin.Open = %v", err)
+		}
+		g := NewGame(context.Background(), s, newFakeController(), &fakeAudioLifecycle{})
+		defer g.Close()
+		if err := g.Update(); err != nil {
+			t.Fatalf("Update = %v", err)
+		}
+
+		if g.view.HasSprite(skin.EQGraphBackground) {
+			t.Fatal("EQGraphBackground should be absent on 275x294 eqmain.bmp")
+		}
+		if g.view.HasSprite(skin.EQGraphLineColors) {
+			t.Fatal("EQGraphLineColors should be absent on 275x294 eqmain.bmp")
+		}
+		if g.view.HasSprite(skin.EQPreampLine) {
+			t.Fatal("EQPreampLine should be absent on 275x294 eqmain.bmp")
+		}
+
+		g.showEQ = true
+		screen := ebiten.NewImage(275, 464)
+		for _, preamp := range []float64{0, 50, 100} {
+			g.eqPreamp = preamp
+			g.Draw(screen)
+		}
+	})
+
+	t.Run("275x314 draws graph without preamp line", func(t *testing.T) {
+		dir := t.TempDir()
+		writeBMP(t, dir, "main.bmp", 275, 116)
+		writeBMP(t, dir, "eqmain.bmp", 275, 314)
+
+		s, err := skin.Open(dir)
+		if err != nil {
+			t.Fatalf("skin.Open = %v", err)
+		}
+		g := NewGame(context.Background(), s, newFakeController(), &fakeAudioLifecycle{})
+		defer g.Close()
+		if err := g.Update(); err != nil {
+			t.Fatalf("Update = %v", err)
+		}
+
+		if !g.view.HasSprite(skin.EQGraphBackground) {
+			t.Fatal("EQGraphBackground should be present on 275x314 eqmain.bmp")
+		}
+		if !g.view.HasSprite(skin.EQGraphLineColors) {
+			t.Fatal("EQGraphLineColors should be present on 275x314 eqmain.bmp")
+		}
+		if g.view.HasSprite(skin.EQPreampLine) {
+			t.Fatal("EQPreampLine should be absent on 275x314 eqmain.bmp")
+		}
+
+		g.showEQ = true
+		screen := ebiten.NewImage(275, 464)
+		g.Draw(screen)
 	})
 }
 

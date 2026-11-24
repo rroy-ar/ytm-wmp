@@ -385,10 +385,19 @@ func (g *Game) drawEQSlider(screen *ebiten.Image, x, y int, val float64, active 
 }
 
 func (g *Game) drawEQGraph(screen *ebiten.Image, x, y int) {
-	g.drawSprite(screen, skin.EQGraphBackground, image.Pt(x, y))
+	// Classic 275x294 eqmain.bmp sheets omit the y=294..314 graph section
+	// intentionally when the skin has no EQ graph (e.g. Bento Classified).
+	if !g.view.HasSprite(skin.EQGraphBackground) && !g.view.HasSprite(skin.EQGraphLineColors) {
+		return
+	}
+	if g.view.HasSprite(skin.EQGraphBackground) {
+		g.drawSprite(screen, skin.EQGraphBackground, image.Pt(x, y))
+	}
 
-	preampY := y + int(math.Round((1.0-clampEQVal(g.eqPreamp)/100.0)*18.0))
-	g.drawSprite(screen, skin.EQPreampLine, image.Pt(x, preampY))
+	if g.view.HasSprite(skin.EQPreampLine) {
+		preampY := y + int(math.Round((1.0-clampEQVal(g.eqPreamp)/100.0)*18.0))
+		g.drawSprite(screen, skin.EQPreampLine, image.Pt(x, preampY))
+	}
 
 	var prevX, prevY float32
 	for i, val := range g.eqBands {

@@ -422,7 +422,7 @@ docs/
 - [ ] Custom `.cur` cursor support.
 - [ ] MilkDrop visualizer support.
 - [ ] Gapless playback.
-- [ ] Performance profiling and `v0.1` release.
+- [ ] Performance profiling.
 
 ### Explicit Non-Goals
 - **Windows / macOS support** — targeted strictly at Linux (X11 / Wayland).

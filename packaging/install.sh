@@ -37,6 +37,15 @@ if [ -z "${PREFIX:-}" ]; then
 	fi
 fi
 
+case "$PREFIX" in
+	"~")
+		PREFIX="${HOME}"
+		;;
+	"~/"*)
+		PREFIX="${HOME}/${PREFIX#\~/}"
+		;;
+esac
+
 DESTDIR="${DESTDIR:-}"
 BINDIR="${DESTDIR}${PREFIX}/bin"
 APPDIR="${DESTDIR}${PREFIX}/share/applications"

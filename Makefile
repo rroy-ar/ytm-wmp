@@ -1,4 +1,9 @@
 PREFIX ?= /usr/local
+ifeq ($(PREFIX),~)
+override PREFIX := $(HOME)
+else ifneq ($(filter ~/%,$(firstword $(PREFIX))),)
+override PREFIX := $(patsubst ~/%,$(HOME)/%,$(PREFIX))
+endif
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 DESTDIR ?=

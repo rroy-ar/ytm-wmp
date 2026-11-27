@@ -120,8 +120,8 @@ go run ./cmd/ytm-wmp
 
 # Or build and install locally (PREFIX defaults to /usr/local for make)
 make build
-make install PREFIX=~/.local
-# Uninstall with: make uninstall PREFIX=~/.local
+make install PREFIX="$HOME/.local"
+# Uninstall with: make uninstall PREFIX="$HOME/.local"
 
 # Or run a built binary directly
 ./ytm-wmp
